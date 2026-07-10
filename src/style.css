@@ -161,10 +161,21 @@ body {
 /* ===== Sound notice ===== */
 
 .sound-note {
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 18px;
   letter-spacing: 1px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.5);
   transition: opacity 0.25s;
+}
+
+.sound-note-icon,
+.sound-note svg {
+  width: 20px;
+  height: 20px;
+  stroke: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
 }
 
 /* Fade the notice away once the player has tapped in. */

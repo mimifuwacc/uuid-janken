@@ -1,7 +1,7 @@
 import "./style.css";
 import { icon } from "@fortawesome/fontawesome-svg-core";
 import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
-import { createIcons, Swords, RefreshCcw, ChevronsDownUp } from "lucide";
+import { createIcons, Swords, RefreshCcw, ChevronsDownUp, Volume2 } from "lucide";
 import {
   getRevealDelay,
   getRevealFrequency,
@@ -10,7 +10,7 @@ import {
 } from "./reveal";
 import { createWinnerShareUrl } from "./share";
 
-const ICONS = { Swords, RefreshCcw, ChevronsDownUp };
+const ICONS = { Swords, RefreshCcw, ChevronsDownUp, Volume2 };
 const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";
@@ -461,7 +461,7 @@ function init() {
       <div class="tap-hint"><i data-lucide="swords" class="tap-icon"></i></div>
       <div class="uuid-display" id="uuid-${player === 1 ? 0 : 1}"></div>
       <div class="status" id="status-${player === 1 ? 0 : 1}">タップして準備</div>
-      <div class="sound-note">🔊 音が出ます</div>
+      <div class="sound-note"><i data-lucide="volume-2" class="sound-note-icon"></i>音が出ます</div>
       <div class="replay-slot" id="replay-${player === 1 ? 0 : 1}"></div>
       <div class="player-label">PLAYER ${player}</div>`;
 
