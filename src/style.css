@@ -101,7 +101,11 @@ body {
 }
 
 .half.lose::before {
-  background: radial-gradient(ellipse 80% 60% at 50% 60%, rgba(80, 0, 0, 0.15) 0%, transparent 70%);
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 60%,
+    rgba(var(--player-color-rgb), 0.05) 0%,
+    transparent 70%
+  );
 }
 
 @keyframes win-bg-pulse {
@@ -678,5 +682,58 @@ body {
   }
   85% {
     transform: translateX(2px);
+  }
+}
+
+/* ===== Desktop: split left/right instead of top/bottom ===== */
+/* On a monitor you can't lay the screen flat for face-to-face play, so drop
+   the 180° rotation and place the two sides upright next to each other. */
+@media (min-width: 900px) and (orientation: landscape) {
+  /* Two halves fill the full width and meet in the middle (no dark band).
+     Green (Player 1) on the left, red (Player 2) on the right. */
+  #app {
+    grid-template-rows: 1fr;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .half.bottom {
+    grid-area: 1 / 1;
+  }
+  .half.top {
+    grid-area: 1 / 2;
+    transform: none;
+  }
+
+  /* Divider floats over the center seam instead of taking a column. */
+  .divider {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    transform: translateX(-50%);
+    width: 56px;
+    height: auto;
+    flex-direction: column;
+    padding: 24px 0;
+    pointer-events: none;
+  }
+
+  .divider::before,
+  .divider::after {
+    flex: 1;
+    width: 1px;
+    height: auto;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(255, 255, 255, 0.12) 40%,
+      rgba(255, 255, 255, 0.12) 60%,
+      transparent
+    );
+  }
+
+  /* One centered countdown call is enough on desktop (no facing player). */
+  .countdown-half.for-top {
+    display: none;
   }
 }
