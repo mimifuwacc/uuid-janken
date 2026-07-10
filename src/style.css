@@ -616,6 +616,78 @@ body {
   }
 }
 
+/* ===== Upgrade effect ===== */
+
+.upgrade-effect {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 150;
+  font-size: clamp(56px, 18vw, 120px);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  opacity: 0;
+}
+
+.upgrade-effect.pair {
+  color: #ffdd00;
+  text-shadow:
+    0 0 16px #fff,
+    0 0 40px #ffdd00,
+    0 0 90px #ff8a00;
+  animation: upgrade-pair 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.upgrade-effect.triple {
+  color: #fff;
+  text-shadow:
+    0 0 18px #fff,
+    0 0 45px #ff2b6a,
+    0 0 100px #ff2b6a;
+  animation: upgrade-triple 0.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes upgrade-pair {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes upgrade-triple {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(-8deg);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1.35) rotate(4deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(0.95) rotate(-2deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45) rotate(0);
+  }
+}
+
 /* ===== Screen shake ===== */
 
 .shaking {

@@ -4,7 +4,9 @@ import {
   getRevealDelay,
   getRevealFrequency,
   getRevealShakeDistance,
+  getRevealUpgrade,
   REVEAL_CHARACTER_COUNT,
+  type RevealUpgrade,
 } from "./reveal";
 
 const ICONS = { Swords, RefreshCcw, ChevronsDownUp };
@@ -48,6 +50,7 @@ let statusEls: [HTMLElement, HTMLElement];
 let replaySlots: [HTMLElement, HTMLElement];
 let countdownEl: HTMLElement;
 let countdownHalves: [HTMLElement, HTMLElement];
+let upgradeEffectEl: HTMLElement;
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 
@@ -133,6 +136,23 @@ function playRevealShake(app: HTMLElement, shakeDistance: number) {
   );
 }
 
+function getRoundUpgrade(): Exclude<RevealUpgrade, null> | null {
+  const upgrades = [
+    getRevealUpgrade(uuids[0], revealCount),
+    getRevealUpgrade(uuids[1], revealCount),
+  ];
+  if (upgrades.includes("triple")) return "triple";
+  if (upgrades.includes("pair")) return "pair";
+  return null;
+}
+
+function showUpgradeEffect(upgrade: Exclude<RevealUpgrade, null>) {
+  upgradeEffectEl.textContent = upgrade === "triple" ? "激アツ！" : "ゾロ目！";
+  upgradeEffectEl.className = "upgrade-effect";
+  void upgradeEffectEl.offsetWidth;
+  upgradeEffectEl.classList.add(upgrade);
+}
+
 function spawnRipple(half: HTMLElement, x: number, y: number) {
   const rect = half.getBoundingClientRect();
   const r = document.createElement("div");
@@ -205,9 +225,11 @@ function startReveal() {
     if (phase !== "reveal") return;
     revealCount++;
     const shakeDistance = getRevealShakeDistance(revealCount);
+    const upgrade = getRoundUpgrade();
     refreshUUIDs();
     playRevealSound();
     playRevealShake(app, shakeDistance);
+    if (upgrade) showUpgradeEffect(upgrade);
     if (revealCount < REVEAL_CHARACTER_COUNT) {
       revealTimer = window.setTimeout(tick, getRevealDelay(revealCount));
     } else {
@@ -349,6 +371,8 @@ function resetGame() {
   uuidEls[1].innerHTML = "";
   replaySlots[0].innerHTML = "";
   replaySlots[1].innerHTML = "";
+  upgradeEffectEl.className = "upgrade-effect";
+  upgradeEffectEl.textContent = "";
   setStatus(0, "タップして準備");
   setStatus(1, "タップして準備");
 
@@ -381,6 +405,7 @@ function init() {
       <div class="countdown-half for-top" id="countdown-top"></div>
       <div class="countdown-half for-bottom" id="countdown-bottom"></div>
     </div>
+    <div class="upgrade-effect" id="upgrade-effect"></div>
   `;
   createIcons({ icons: ICONS });
 
@@ -405,6 +430,7 @@ function init() {
     document.getElementById("countdown-bottom") as HTMLElement,
     document.getElementById("countdown-top") as HTMLElement,
   ];
+  upgradeEffectEl = document.getElementById("upgrade-effect") as HTMLElement;
 
   canvas = document.getElementById("particles") as HTMLCanvasElement;
   ctx = canvas.getContext("2d")!;
