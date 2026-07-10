@@ -8,7 +8,7 @@ import {
   getRevealShakeDistance,
   REVEAL_CHARACTER_COUNT,
 } from "./reveal";
-import { createWinnerShareUrl } from "./share";
+import { createDrawShareUrl, createWinnerShareUrl } from "./share";
 
 const ICONS = { Swords, RefreshCcw, ChevronsDownUp, Volume2 };
 const TWITTER_ICON = icon(faTwitter).html.join("");
@@ -456,10 +456,10 @@ function showResult() {
       btn.addEventListener("click", resetGame);
       target.appendChild(btn);
     };
-    const makeShareBtn = (target: HTMLElement) => {
+    const makeShareBtn = (target: HTMLElement, href: string) => {
       const shareLink = document.createElement("a");
       shareLink.className = "share-btn";
-      shareLink.href = createWinnerShareUrl(uuids[0], uuids[1], window.location.href);
+      shareLink.href = href;
       shareLink.target = "_blank";
       shareLink.rel = "noopener noreferrer";
       shareLink.innerHTML = `${TWITTER_ICON}ツイートする`;
@@ -467,8 +467,15 @@ function showResult() {
     };
     makeBtn(replaySlots[0]);
     makeBtn(replaySlots[1]);
-    if (winner !== "draw" && winner !== null) {
-      makeShareBtn(replaySlots[winner]);
+    if (winner === "draw") {
+      const drawShareUrl = createDrawShareUrl(uuids[0], uuids[1], window.location.href);
+      makeShareBtn(replaySlots[0], drawShareUrl);
+      makeShareBtn(replaySlots[1], drawShareUrl);
+    } else if (winner !== null) {
+      makeShareBtn(
+        replaySlots[winner],
+        createWinnerShareUrl(uuids[0], uuids[1], window.location.href),
+      );
     }
     createIcons({ icons: ICONS });
   }, 1800);
