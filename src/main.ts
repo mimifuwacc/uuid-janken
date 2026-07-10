@@ -431,6 +431,7 @@ function init() {
     el.addEventListener(
       "touchstart",
       (e) => {
+        if (phase !== "idle") return;
         e.preventDefault();
         const t = e.touches[0];
         onTap(player, t.clientX, t.clientY);
