@@ -618,6 +618,23 @@ body {
 
 /* ===== Screen shake ===== */
 
+.revealing {
+  animation: reveal-shake 0.12s steps(2, end) infinite;
+}
+
+@keyframes reveal-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(var(--reveal-shake-distance));
+  }
+  75% {
+    transform: translateX(var(--reveal-shake-distance-negative));
+  }
+}
+
 .shaking {
   animation: shake 0.5s ease-out;
 }

@@ -1,6 +1,11 @@
 import "./style.css";
 import { createIcons, Swords, RefreshCcw, ChevronsDownUp } from "lucide";
-import { getRevealDelay, getRevealFrequency, REVEAL_CHARACTER_COUNT } from "./reveal";
+import {
+  getRevealDelay,
+  getRevealFrequency,
+  getRevealShakeDistance,
+  REVEAL_CHARACTER_COUNT,
+} from "./reveal";
 
 const ICONS = { Swords, RefreshCcw, ChevronsDownUp };
 
@@ -178,11 +183,16 @@ function startCountdown() {
 function startReveal() {
   phase = "reveal";
   revealCount = 0;
+  const app = document.getElementById("app")!;
+  app.classList.add("revealing");
   refreshUUIDs();
 
   const tick = () => {
     if (phase !== "reveal") return;
     revealCount++;
+    const shakeDistance = getRevealShakeDistance(revealCount);
+    app.style.setProperty("--reveal-shake-distance", `${shakeDistance}px`);
+    app.style.setProperty("--reveal-shake-distance-negative", `${-shakeDistance}px`);
     refreshUUIDs();
     playRevealSound();
     if (revealCount < REVEAL_CHARACTER_COUNT) {
@@ -267,6 +277,10 @@ function spawnParticles(winnerIdx: 0 | 1) {
 
 function showResult() {
   phase = "result";
+  const app = document.getElementById("app")!;
+  app.classList.remove("revealing");
+  app.style.removeProperty("--reveal-shake-distance");
+  app.style.removeProperty("--reveal-shake-distance-negative");
 
   const cmp = compareUUIDs(uuids[0], uuids[1]);
   if (cmp === "draw") {
@@ -280,8 +294,8 @@ function showResult() {
     const loser = winner === 0 ? 1 : 0;
     halfEls[winner].classList.add("win");
     halfEls[loser].classList.add("lose");
-    document.getElementById("app")!.classList.add("shaking");
-    setTimeout(() => document.getElementById("app")!.classList.remove("shaking"), 500);
+    app.classList.add("shaking");
+    setTimeout(() => app.classList.remove("shaking"), 500);
     setStatus(winner, "WIN！");
     setStatus(loser, "LOSE...");
     spawnParticles(winner);
