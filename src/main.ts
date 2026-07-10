@@ -328,15 +328,10 @@ function showResult() {
       btn.addEventListener("click", resetGame);
       target.appendChild(btn);
     };
-    const makeShareBtn = (target: HTMLElement, player: 0 | 1) => {
+    const makeShareBtn = (target: HTMLElement) => {
       const shareLink = document.createElement("a");
       shareLink.className = "share-btn";
-      shareLink.href = createWinnerShareUrl(
-        player === 0 ? 1 : 2,
-        uuids[0],
-        uuids[1],
-        window.location.href,
-      );
+      shareLink.href = createWinnerShareUrl(uuids[0], uuids[1], window.location.href);
       shareLink.target = "_blank";
       shareLink.rel = "noopener noreferrer";
       shareLink.innerHTML = `${TWITTER_ICON}ツイートする`;
@@ -345,7 +340,7 @@ function showResult() {
     makeBtn(replaySlots[0]);
     makeBtn(replaySlots[1]);
     if (winner !== "draw" && winner !== null) {
-      makeShareBtn(replaySlots[winner], winner);
+      makeShareBtn(replaySlots[winner]);
     }
     createIcons({ icons: ICONS });
   }, 1800);
