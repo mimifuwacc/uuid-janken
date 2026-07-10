@@ -187,7 +187,6 @@ body {
 
 .uuid-char.dash {
   color: rgba(255, 255, 255, 0.05);
-  width: 0.5ch;
 }
 
 .uuid-char.revealed {
