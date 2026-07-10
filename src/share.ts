@@ -8,7 +8,7 @@ export function createWinnerShareUrl(
   const url = new URL(X_INTENT_URL);
   url.searchParams.set(
     "text",
-    `UUIDじゃんけんで遊びました！\n${player0Uuid}\nvs\n${player1Uuid}\n\n${gameUrl}\n#UUIDじゃんけん`,
+    `UUIDじゃんけんで遊びました！\n\n${player0Uuid}\nvs\n${player1Uuid}\n\n${gameUrl}\n#UUIDじゃんけん`,
   );
   return url.toString();
 }
