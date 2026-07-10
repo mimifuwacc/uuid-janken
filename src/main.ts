@@ -461,6 +461,7 @@ function init() {
       <div class="tap-hint"><i data-lucide="swords" class="tap-icon"></i></div>
       <div class="uuid-display" id="uuid-${player === 1 ? 0 : 1}"></div>
       <div class="status" id="status-${player === 1 ? 0 : 1}">タップして準備</div>
+      <div class="sound-note">🔊 音が出ます</div>
       <div class="replay-slot" id="replay-${player === 1 ? 0 : 1}"></div>
       <div class="player-label">PLAYER ${player}</div>`;
 

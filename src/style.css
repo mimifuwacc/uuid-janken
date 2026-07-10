@@ -158,6 +158,20 @@ body {
   font-weight: 600;
 }
 
+/* ===== Sound notice ===== */
+
+.sound-note {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.35);
+  transition: opacity 0.25s;
+}
+
+/* Fade the notice away once the player has tapped in. */
+.half.ready .sound-note {
+  opacity: 0;
+}
+
 /* ===== UUID Display ===== */
 
 .uuid-display {
