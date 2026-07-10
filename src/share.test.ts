@@ -15,7 +15,7 @@ describe("勝者の共有URL", () => {
     expect(url.pathname).toBe("/intent/tweet");
     expect([...url.searchParams.keys()]).toEqual(["text"]);
     expect(url.searchParams.get("text")).toBe(
-      "UUIDじゃんけんで遊びました！\n123e4567-e89b-42d3-a456-426614174000\nvs\n123e4567-e89b-42d3-a456-426614174001\n\nhttps://uuid-janken.example.com/\n#UUIDじゃんけん",
+      "UUIDじゃんけんで遊びました！\n\n123e4567-e89b-42d3-a456-426614174000\nvs\n123e4567-e89b-42d3-a456-426614174001\n\nhttps://uuid-janken.example.com/\n#UUIDじゃんけん",
     );
   });
 
