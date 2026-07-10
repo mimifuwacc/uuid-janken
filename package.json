@@ -13,6 +13,8 @@
     "prepare": "vp config"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^7.3.0",
+    "@fortawesome/free-brands-svg-icons": "^7.3.0",
     "lucide": "^1.23.0"
   },
   "devDependencies": {

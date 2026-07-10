@@ -1,4 +1,6 @@
 import "./style.css";
+import { icon } from "@fortawesome/fontawesome-svg-core";
+import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
 import { createIcons, Swords, RefreshCcw, ChevronsDownUp } from "lucide";
 import {
   getRevealDelay,
@@ -6,8 +8,10 @@ import {
   getRevealShakeDistance,
   REVEAL_CHARACTER_COUNT,
 } from "./reveal";
+import { createWinnerShareUrl } from "./share";
 
 const ICONS = { Swords, RefreshCcw, ChevronsDownUp };
+const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";
 
@@ -324,8 +328,20 @@ function showResult() {
       btn.addEventListener("click", resetGame);
       target.appendChild(btn);
     };
+    const makeShareBtn = (target: HTMLElement) => {
+      const shareLink = document.createElement("a");
+      shareLink.className = "share-btn";
+      shareLink.href = createWinnerShareUrl(uuids[0], uuids[1], window.location.href);
+      shareLink.target = "_blank";
+      shareLink.rel = "noopener noreferrer";
+      shareLink.innerHTML = `${TWITTER_ICON}ツイートする`;
+      target.appendChild(shareLink);
+    };
     makeBtn(replaySlots[0]);
     makeBtn(replaySlots[1]);
+    if (winner !== "draw" && winner !== null) {
+      makeShareBtn(replaySlots[winner]);
+    }
     createIcons({ icons: ICONS });
   }, 1800);
 }

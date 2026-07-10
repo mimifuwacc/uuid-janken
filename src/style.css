@@ -278,6 +278,8 @@ body {
 .replay-slot {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .replay-slot:empty {
@@ -401,7 +403,8 @@ body {
 }
 
 .btn-icon,
-.replay-btn svg {
+.replay-btn svg,
+.share-btn svg {
   width: 16px;
   height: 16px;
   stroke: var(--player-color);
@@ -534,12 +537,14 @@ body {
   0% {
     transform: scale(0.1);
     opacity: 0;
-    filter: blur(16px);
+    text-shadow:
+      0 0 32px currentColor,
+      0 0 64px currentColor;
   }
   25% {
     opacity: 1;
-    filter: blur(0);
     transform: scale(1.35);
+    text-shadow: 0 0 12px currentColor;
   }
   55% {
     transform: scale(0.9);
@@ -562,12 +567,14 @@ body {
   0% {
     transform: scale(0.15);
     opacity: 0;
-    filter: blur(12px);
+    text-shadow:
+      0 0 32px currentColor,
+      0 0 64px currentColor;
   }
   35% {
     opacity: 1;
-    filter: blur(0);
     transform: scale(1.2);
+    text-shadow: 0 0 12px currentColor;
   }
   65% {
     transform: scale(0.93);
@@ -584,7 +591,8 @@ body {
 
 /* ===== Replay button ===== */
 
-.replay-btn {
+.replay-btn,
+.share-btn {
   margin-top: 8px;
   padding: 14px 36px;
   background: transparent;
@@ -599,9 +607,11 @@ body {
   animation: replay-fade 0.4s 0.1s ease-out both;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  text-decoration: none;
 }
 
-.replay-btn:active {
+.replay-btn:active,
+.share-btn:active {
   background: rgba(var(--player-color-rgb), 0.12);
 }
 
