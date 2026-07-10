@@ -8,9 +8,7 @@ import {
   getRevealShakeDistance,
   REVEAL_CHARACTER_COUNT,
 } from "./reveal";
-import winGong from "./assets/win-gong.mp3";
 import { createWinnerShareUrl } from "./share";
-import { playWinSound } from "./win-sound";
 
 const ICONS = { Swords, RefreshCcw, ChevronsDownUp };
 const TWITTER_ICON = icon(faTwitter).html.join("");
@@ -40,8 +38,6 @@ let rafId = 0;
 let revealTimer = 0;
 let audioContext: AudioContext | null = null;
 let revealShake: Animation | null = null;
-let winSoundPlayed = false;
-let winSound: HTMLAudioElement;
 // "最初は / 4〜 / じゃんけん...." — UUID v4 battle cry
 const CALL_SEQUENCE: { text: string; cls: string; duration: number }[] = [
   { text: "最初は", cls: "call-saisho", duration: 750 },
@@ -125,6 +121,80 @@ function playRevealSound() {
   gain.connect(audioContext.destination);
   oscillator.start(now);
   oscillator.stop(now + 0.05);
+}
+
+// "じゃじゃーん！" — a lush fanfare: pickup arpeggio into a big detuned major
+// chord, with sub-bass weight, bell sparkles and a cymbal-like shimmer swell.
+function playFanfareSound() {
+  if (!audioContext) return;
+  const ctx = audioContext;
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.value = 0.55;
+  master.connect(ctx.destination);
+
+  // Glue bus for the tonal layers.
+  const bus = ctx.createBiquadFilter();
+  bus.type = "lowpass";
+  bus.frequency.value = 6500;
+  bus.connect(master);
+
+  const playNote = (
+    freq: number,
+    start: number,
+    dur: number,
+    type: OscillatorType,
+    peak: number,
+    detune = 0,
+  ) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    osc.detune.value = detune;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain);
+    gain.connect(bus);
+    osc.start(start);
+    osc.stop(start + dur + 0.05);
+  };
+
+  // Pickup arpeggio: "じゃ・じゃ・じゃ…"
+  const pickup = [392.0, 523.25, 659.25];
+  pickup.forEach((f, i) => playNote(f, now + i * 0.07, 0.22, "triangle", 0.16));
+
+  // The big chord hit: "ジャーン！" — C major spread across two octaves.
+  const hit = now + 0.21;
+  const chord = [261.63, 523.25, 659.25, 783.99, 1046.5, 1318.51];
+  chord.forEach((f, i) => playNote(f, hit + i * 0.012, 1.4, "sawtooth", 0.13, i % 2 ? 7 : -7));
+
+  // Sub-bass thump for weight, and bright bell sparkles on top.
+  playNote(130.81, hit, 1.1, "sine", 0.4);
+  playNote(2093.0, hit + 0.02, 1.5, "triangle", 0.07);
+  playNote(2637.02, hit + 0.07, 1.3, "triangle", 0.05);
+
+  // Cymbal-like shimmer: high-passed noise swell.
+  const noiseDur = 1.3;
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 6000;
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.0001, hit);
+  noiseGain.gain.exponentialRampToValueAtTime(0.05, hit + 0.05);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, hit + noiseDur);
+  noise.connect(hp);
+  hp.connect(noiseGain);
+  noiseGain.connect(master);
+  noise.start(hit);
+  noise.stop(hit + noiseDur);
 }
 
 function playRevealShake(app: HTMLElement, shakeDistance: number) {
@@ -300,6 +370,7 @@ function showResult() {
   phase = "result";
   const app = document.getElementById("app")!;
   revealShake?.cancel();
+  playFanfareSound();
 
   const cmp = compareUUIDs(uuids[0], uuids[1]);
   if (cmp === "draw") {
@@ -317,7 +388,6 @@ function showResult() {
     setTimeout(() => app.classList.remove("shaking"), 500);
     setStatus(winner, "WIN！");
     setStatus(loser, "LOSE...");
-    winSoundPlayed = playWinSound(winSound, winSoundPlayed);
     spawnParticles(winner);
   }
 
@@ -363,7 +433,6 @@ function resetGame() {
   uuids = ["", ""];
   revealCount = 0;
   winner = null;
-  winSoundPlayed = false;
 
   halfEls[0].className = "half bottom";
   halfEls[1].className = "half top";
@@ -384,8 +453,6 @@ function resizeCanvas() {
 
 function init() {
   const app = document.getElementById("app")!;
-  winSound = new Audio(winGong);
-  winSound.preload = "auto";
 
   // Both halves share the SAME DOM order (divider → outward). rotate(180deg)
   // on the top half makes that order read naturally for the facing player,
@@ -435,11 +502,16 @@ function init() {
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
+  // Let taps on interactive children (replay button / share link) behave
+  // natively — otherwise the half's preventDefault swallows the link's tap.
+  const isInteractive = (target: EventTarget | null) =>
+    target instanceof Element && target.closest("a, button") !== null;
+
   const addTapListeners = (el: HTMLElement, player: 0 | 1) => {
     el.addEventListener(
       "touchstart",
       (e) => {
-        if (phase !== "idle") return;
+        if (isInteractive(e.target)) return;
         e.preventDefault();
         const t = e.touches[0];
         onTap(player, t.clientX, t.clientY);
@@ -447,6 +519,7 @@ function init() {
       { passive: false },
     );
     el.addEventListener("click", (e) => {
+      if (isInteractive(e.target)) return;
       onTap(player, e.clientX, e.clientY);
     });
   };
