@@ -8,8 +8,7 @@ import {
   getRevealShakeDistance,
   REVEAL_CHARACTER_COUNT,
 } from "./reveal";
-<<<<<<< HEAD
-import winBell from "./assets/win-bell.mp3";
+import winGong from "./assets/win-gong.mp3";
 import { createWinnerShareUrl } from "./share";
 import { playWinSound } from "./win-sound";
 
@@ -385,7 +384,7 @@ function resizeCanvas() {
 
 function init() {
   const app = document.getElementById("app")!;
-  winSound = new Audio(winBell);
+  winSound = new Audio(winGong);
   winSound.preload = "auto";
 
   // Both halves share the SAME DOM order (divider → outward). rotate(180deg)
