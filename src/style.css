@@ -749,6 +749,21 @@ body {
   background: rgba(var(--player-color-rgb), 0.12);
 }
 
+/* Secondary action next to the rematch button — same shape, muted so the
+   rematch stays the visually primary choice. */
+.replay-btn.leave-btn {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.replay-btn.leave-btn svg {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+
+.replay-btn.leave-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 @keyframes replay-fade {
   from {
     opacity: 0;

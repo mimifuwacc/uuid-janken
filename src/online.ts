@@ -99,6 +99,10 @@ export class OnlineConnection {
     this.send({ type: "requeue" });
   }
 
+  sendLeave(): void {
+    this.send({ type: "leave" });
+  }
+
   close(): void {
     this.closedByUs = true;
     this.stopPing();

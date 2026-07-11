@@ -502,10 +502,16 @@ function showResult() {
   }, 1800);
 }
 
-function makeActionBtn(target: HTMLElement, label: string, action: () => void) {
+function makeActionBtn(
+  target: HTMLElement,
+  label: string,
+  action: () => void,
+  icon = "refresh-ccw",
+  extraClass = "",
+) {
   const btn = document.createElement("button");
-  btn.className = "replay-btn";
-  btn.innerHTML = `<i data-lucide="refresh-ccw" class="btn-icon"></i>${label}`;
+  btn.className = extraClass ? `replay-btn ${extraClass}` : "replay-btn";
+  btn.innerHTML = `<i data-lucide="${icon}" class="btn-icon"></i>${label}`;
   btn.addEventListener("touchstart", (e) => {
     e.preventDefault();
     action();
@@ -526,7 +532,8 @@ function makeShareBtn(target: HTMLElement, href: string) {
 
 // Online result screen: everything lives on your (bottom) half — the
 // opponent's half never gets buttons. Reconnect/requeue take priority over a
-// plain rematch when the connection or the opponent is gone.
+// plain rematch when the connection or the opponent is gone; a still-present
+// opponent additionally gets a "disconnect and find someone else" option.
 function buildOnlineResultButtons() {
   if (!online?.isOpen) {
     makeActionBtn(replaySlots[0], "再接続", requeueOnline);
@@ -535,6 +542,7 @@ function buildOnlineResultButtons() {
   } else {
     const label = winner === "draw" ? "あいこでしょ" : "もう一度";
     makeActionBtn(replaySlots[0], label, readyAgainOnline);
+    makeActionBtn(replaySlots[0], "この相手と切断する", leaveOpponent, "log-out", "leave-btn");
   }
   if (winner === "draw") {
     makeShareBtn(replaySlots[0], createDrawShareUrl(uuids[0], uuids[1], window.location.href));
@@ -609,6 +617,13 @@ const onlineHandlers: OnlineHandlers = {
     // result screen then offers "対戦相手を探す" instead of a rematch.
     if (phase === "idle") {
       requeueOnline();
+    } else if (phase === "result" && replaySlots[0].children.length > 0) {
+      // Result buttons already rendered (e.g. the opponent used "この相手と
+      // 切断する" after both saw the result) — rebuild them now instead of
+      // leaving a stale もう一度 button that would silently do nothing.
+      replaySlots[0].innerHTML = "";
+      buildOnlineResultButtons();
+      createIcons({ icons: ICONS });
     }
   },
   onDisconnected: () => {
@@ -631,6 +646,16 @@ function readyAgainOnline() {
   halfEls[0].classList.add("ready");
   setStatus(0, "準備完了！");
   online?.sendReady(uuidVersion);
+}
+
+// Voluntarily leave the current opponent (who's still connected) and go back
+// to matchmaking for someone new. Distinct from requeueOnline(), which only
+// applies once the opponent is already gone.
+function leaveOpponent() {
+  online?.sendLeave();
+  onlineMatched = false;
+  opponentLeft = false;
+  resetGame();
 }
 
 // Look for a new opponent, reconnecting first if the socket has died.
