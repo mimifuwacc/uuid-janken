@@ -1,17 +1,17 @@
 import "./style.css";
 import { icon } from "@fortawesome/fontawesome-svg-core";
 import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
-import { createIcons, Swords, RefreshCcw, ChevronsDownUp } from "lucide";
+import { createIcons, Swords, RefreshCcw, ChevronsDownUp, Volume2 } from "lucide";
 import {
   getRevealDelay,
   getRevealFrequency,
   getRevealShakeDistance,
   REVEAL_CHARACTER_COUNT,
 } from "./reveal";
-import { createWinnerShareUrl } from "./share";
+import { createDrawShareUrl, createWinnerShareUrl } from "./share";
 import { compareUuids, generateRaceUuids, type UuidVersion } from "./uuid";
 
-const ICONS = { Swords, RefreshCcw, ChevronsDownUp };
+const ICONS = { Swords, RefreshCcw, ChevronsDownUp, Volume2 };
 const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";
@@ -42,11 +42,13 @@ let revealShake: Animation | null = null;
 let uuidVersion: UuidVersion = "v4";
 // "最初は / 4〜 / じゃんけん...." — battle cry, version digit matches uuidVersion
 const callSequence = (): { text: string; cls: string; duration: number }[] => [
-  { text: "最初は", cls: "call-saisho", duration: 750 },
-  { text: uuidVersion === "v4" ? "4" : "7", cls: "call-four", duration: 850 },
-  { text: "じゃんけん", cls: "call-janken", duration: 1050 },
+  { text: "最初は", cls: "call-saisho", duration: 1000 },
+  { text: uuidVersion === "v4" ? "4" : "7", cls: "call-four", duration: 950 },
+  { text: "じゃんけん", cls: "call-janken", duration: 900 },
 ];
 const PARTICLE_COLORS = ["#00ff88", "#ff5f35", "#ffffff", "#ffdd00", "#00cfff", "#ff66cc"];
+// Must match the desktop split in style.css (halves side-by-side, not rotated).
+const DESKTOP_SPLIT_QUERY = "(min-width: 900px) and (orientation: landscape)";
 
 let halfEls: [HTMLElement, HTMLElement];
 let uuidEls: [HTMLElement, HTMLElement];
@@ -117,6 +119,50 @@ function playRevealSound() {
   gain.connect(audioContext.destination);
   oscillator.start(now);
   oscillator.stop(now + 0.05);
+}
+
+// Rich chord stab for each battle-cry step ("最初は" / "4" / "じゃんけん").
+function playCallSound() {
+  if (!audioContext) return;
+  const ctx = audioContext;
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.value = 0.5;
+  master.connect(ctx.destination);
+
+  const root = 392.0; // G4 — same pitch on every step
+
+  // Root + fifth + octave for a full stab that rings out.
+  const voices = [root, root * 1.5, root * 2];
+  voices.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? "sawtooth" : "triangle";
+    osc.frequency.value = freq;
+    osc.detune.value = i === 0 ? -6 : 6;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
+    gain.gain.setValueAtTime(0.16, now + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(now);
+    osc.stop(now + 0.8);
+  });
+
+  // Bright bell sparkle two octaves up, with a long tail.
+  const bell = ctx.createOscillator();
+  const bellGain = ctx.createGain();
+  bell.type = "triangle";
+  bell.frequency.value = root * 4;
+  bellGain.gain.setValueAtTime(0.0001, now);
+  bellGain.gain.exponentialRampToValueAtTime(0.07, now + 0.01);
+  bellGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  bell.connect(bellGain);
+  bellGain.connect(master);
+  bell.start(now);
+  bell.stop(now + 0.65);
 }
 
 // "じゃじゃーん！" — a lush fanfare: pickup arpeggio into a big detuned major
@@ -209,10 +255,13 @@ function playRevealShake(app: HTMLElement, shakeDistance: number) {
 
 function spawnRipple(half: HTMLElement, x: number, y: number) {
   const rect = half.getBoundingClientRect();
+  // The top half is rotated 180° on mobile, so its local coordinate system is
+  // flipped — mirror the offsets there so the ripple lands under the finger.
+  const rotated = half.classList.contains("top") && !window.matchMedia(DESKTOP_SPLIT_QUERY).matches;
   const r = document.createElement("div");
   r.className = "ripple";
-  r.style.left = `${x - rect.left}px`;
-  r.style.top = `${y - rect.top}px`;
+  r.style.left = `${rotated ? rect.right - x : x - rect.left}px`;
+  r.style.top = `${rotated ? rect.bottom - y : y - rect.top}px`;
   half.appendChild(r);
   setTimeout(() => r.remove(), 600);
 }
@@ -235,6 +284,9 @@ function onTap(player: 0 | 1, x: number, y: number) {
 function startCountdown() {
   phase = "countdown";
   setVersionTogglesVisible(false);
+  // Clear the "準備完了！" labels — they're not needed during the count.
+  setStatus(0, "");
+  setStatus(1, "");
   revealCount = 0;
   // Kicked off now so it has the whole countdown (2.6s) to resolve — the
   // race finishes in well under that, v4 resolves immediately.
@@ -268,6 +320,7 @@ function startCountdown() {
     countdownHalves[0].appendChild(makeEl());
     countdownHalves[1].innerHTML = "";
     countdownHalves[1].appendChild(makeEl());
+    playCallSound();
     step++;
 
     setTimeout(tick, duration);
@@ -406,10 +459,10 @@ function showResult() {
       btn.addEventListener("click", resetGame);
       target.appendChild(btn);
     };
-    const makeShareBtn = (target: HTMLElement) => {
+    const makeShareBtn = (target: HTMLElement, href: string) => {
       const shareLink = document.createElement("a");
       shareLink.className = "share-btn";
-      shareLink.href = createWinnerShareUrl(uuids[0], uuids[1], window.location.href);
+      shareLink.href = href;
       shareLink.target = "_blank";
       shareLink.rel = "noopener noreferrer";
       shareLink.innerHTML = `${TWITTER_ICON}ツイートする`;
@@ -417,8 +470,15 @@ function showResult() {
     };
     makeBtn(replaySlots[0]);
     makeBtn(replaySlots[1]);
-    if (winner !== "draw" && winner !== null) {
-      makeShareBtn(replaySlots[winner]);
+    if (winner === "draw") {
+      const drawShareUrl = createDrawShareUrl(uuids[0], uuids[1], window.location.href);
+      makeShareBtn(replaySlots[0], drawShareUrl);
+      makeShareBtn(replaySlots[1], drawShareUrl);
+    } else if (winner !== null) {
+      makeShareBtn(
+        replaySlots[winner],
+        createWinnerShareUrl(uuids[0], uuids[1], window.location.href),
+      );
     }
     createIcons({ icons: ICONS });
   }, 1800);
@@ -465,6 +525,7 @@ function init() {
       <div class="tap-hint"><i data-lucide="swords" class="tap-icon"></i></div>
       <div class="uuid-display" id="uuid-${player === 1 ? 0 : 1}"></div>
       <div class="status" id="status-${player === 1 ? 0 : 1}">タップして準備</div>
+      <div class="sound-note"><i data-lucide="volume-2" class="sound-note-icon"></i>音が出ます</div>
       <div class="replay-slot" id="replay-${player === 1 ? 0 : 1}"></div>
       <div class="player-label">PLAYER ${player}</div>`;
 
