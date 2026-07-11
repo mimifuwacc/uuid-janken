@@ -634,8 +634,18 @@ const onlineHandlers: OnlineHandlers = {
       replaySlots[0].innerHTML = "";
       makeActionBtn(replaySlots[0], "再接続", requeueOnline);
       createIcons({ icons: ICONS });
+    } else if (phase === "result" && replaySlots[0].children.length > 0) {
+      // Result buttons (もう一度/この相手と切断する) were already rendered
+      // before the connection died — rebuild them now via
+      // buildOnlineResultButtons(), which checks online.isOpen first and
+      // renders 再接続 instead, so a stale button never just does nothing.
+      replaySlots[0].innerHTML = "";
+      buildOnlineResultButtons();
+      createIcons({ icons: ICONS });
     }
-    // Mid-round: the result screen's button offers 再接続 instead.
+    // Otherwise (countdown/reveal, or result not yet rendered): the pending
+    // buildOnlineResultButtons() call in showResult() will already see
+    // online.isOpen === false and render 再接続 from the start.
   },
 };
 
