@@ -7,32 +7,39 @@ import { v7 as uuidV7 } from "uuid";
 export type UuidVersion = "v4" | "v7";
 
 // Client → server. "ready" doubles as the rematch request; "requeue" asks for
-// a new opponent after the previous one left or after a reconnect.
-export type ClientMessage = { type: "ready"; version: UuidVersion } | { type: "requeue" };
+// a new opponent after the previous one left or after a reconnect. "go_ack" is
+// sent the instant "go" is received, to race against the opponent's — see
+// ServerMessage's "go" and worker/index.ts's v7 handling.
+export type ClientMessage =
+  | { type: "ready"; version: UuidVersion }
+  | { type: "requeue" }
+  | { type: "go_ack" };
 
 // Server → client, in rough lifecycle order. "start" carries both UUIDs up
 // front — the reveal is pure presentation, the outcome is already decided.
+// "go" only fires for v7 rounds: it releases both clients from the server's
+// barrier at the same instant, mirroring race.ts's Atomics.notify — whichever
+// "go_ack" reaches the server first decides the winner (see worker/index.ts).
 export type ServerMessage =
   | { type: "waiting" }
   | { type: "matched" }
   | { type: "opponent_ready" }
+  | { type: "go" }
   | { type: "start"; version: UuidVersion; uuid: string; opponentUuid: string }
   | { type: "opponent_left" };
 
+export function buildUuidV4Pair(): [string, string] {
+  return [crypto.randomUUID(), crypto.randomUUID()];
+}
+
 // Two back-to-back argument-less v7() calls: the uuid package's internal
-// monotonic state guarantees the second one always sorts higher, and a coin
-// flip decides which side gets it, so the outcome is a fair 50/50 and never a
-// draw. This is the same construction as race.ts's fallback pair — the online
-// server always uses the coin flip (there is no cross-client thread race).
+// monotonic state guarantees the second one always sorts higher. Used as the
+// v7 pair whenever there's no real race to decide the order — race.ts's
+// fallback (no SharedArrayBuffer / worker race failed) and worker/index.ts's
+// round-timeout fallback (opponent's "go_ack" never arrived) — so a coin flip
+// picks the side, keeping the outcome a fair 50/50 and never a draw.
 export function coinFlipUuidV7Pair(): [string, string] {
   const lower = uuidV7();
   const higher = uuidV7();
   return Math.random() < 0.5 ? [higher, lower] : [lower, higher];
-}
-
-export function buildUuidPair(version: UuidVersion): [string, string] {
-  if (version === "v4") {
-    return [crypto.randomUUID(), crypto.randomUUID()];
-  }
-  return coinFlipUuidV7Pair();
 }

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { buildUuidPair, coinFlipUuidV7Pair } from "./protocol";
+import { buildUuidV4Pair, coinFlipUuidV7Pair } from "./protocol";
 import { compareUuids } from "./uuid";
 
 const HEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe("オンライン対戦用UUIDペア", () => {
   it("v4では両者とも有効なUUID v4で、互いに異なる", () => {
-    const [a, b] = buildUuidPair("v4");
+    const [a, b] = buildUuidV4Pair();
     for (const uuid of [a, b]) {
       expect(uuid).toMatch(HEX);
       expect(uuid[14]).toBe("4");
@@ -14,8 +14,8 @@ describe("オンライン対戦用UUIDペア", () => {
     expect(a).not.toBe(b);
   });
 
-  it("v7では両者ともバージョン7で、必ず勝敗が決まる", () => {
-    const [a, b] = buildUuidPair("v7");
+  it("v7のコイントスペアは両者ともバージョン7で、必ず勝敗が決まる", () => {
+    const [a, b] = coinFlipUuidV7Pair();
     for (const uuid of [a, b]) {
       expect(uuid).toMatch(HEX);
       expect(uuid[14]).toBe("7");
