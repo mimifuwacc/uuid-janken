@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
-    "build": "tsc && vp build",
+    "build": "tsc && tsc -p worker && vp build",
     "test": "vp test",
     "preview": "vp preview",
     "preview:wrangler": "vp build && wrangler dev",
@@ -20,6 +20,7 @@
     "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260710.1",
     "typescript": "~6.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:",

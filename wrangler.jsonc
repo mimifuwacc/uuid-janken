@@ -1,9 +1,26 @@
 {
-  // Static-assets-only Worker (no server script). Serves the Vite build output.
+  // Worker serving the Vite build output as static assets, plus /ws for
+  // online play (WebSocket matchmaking via the JankenLobby Durable Object).
   "name": "uuid-janken",
+  "main": "worker/index.ts",
   "compatibility_date": "2025-06-01",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LOBBY",
+        "class_name": "JankenLobby",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["JankenLobby"],
+    },
+  ],
 }
