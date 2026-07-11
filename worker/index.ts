@@ -2,8 +2,10 @@
 // except /ws, which upgrades to a WebSocket handled by a single global
 // JankenLobby Durable Object that pairs random opponents and referees rounds.
 
+import { v7 as uuidV7 } from "uuid";
 import {
-  buildUuidPair,
+  buildUuidV4Pair,
+  coinFlipUuidV7Pair,
   type ClientMessage,
   type ServerMessage,
   type UuidVersion,
@@ -26,14 +28,26 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
+// A v7 round times out (falls back to coinFlipUuidV7Pair) if the opponent's
+// go_ack never arrives — e.g. a dropped connection with no close event yet.
+// Real round trips settle in well under a second; this only needs to be
+// generous enough to not misfire on ordinary network latency (race.ts's
+// same-machine equivalent, ROUND_TIMEOUT_MS, can be far stricter at 1000ms
+// since there's no network in between).
+const ROUND_TIMEOUT_MS = 4000;
+
 // Per-socket state, persisted via (de)serializeAttachment so it survives
 // hibernation. "waiting" sockets sit in the matchmaking queue; "alone" means
 // the opponent left mid-room — the client must explicitly send "requeue" so a
 // fresh match can never barge in while its reveal animation is still playing.
+// "racing" is a v7 round in flight: both sides were sent "go" at goSentAt,
+// and firstUuid gets filled in the instant one side's go_ack arrives (see
+// webSocketMessage's "go_ack" handling).
 type Attachment =
   | { state: "waiting" }
   | { state: "alone" }
-  | { state: "paired"; roomId: string; readyVersion?: UuidVersion };
+  | { state: "paired"; roomId: string; readyVersion?: UuidVersion }
+  | { state: "racing"; roomId: string; goSentAt: number; firstUuid?: string };
 
 const getAttachment = (ws: WebSocket): Attachment | null =>
   ws.deserializeAttachment() as Attachment | null;
@@ -74,34 +88,140 @@ export class JankenLobby {
     if (!att) return;
 
     if (msg.type === "requeue") {
-      // Ignored while still paired — requeueing is only for abandoned players.
-      if (att.state !== "paired") this.enqueue(ws);
+      // Ignored unless the player is actually unpaired — requeueing mid-round
+      // (paired or racing) would abandon a round still in progress.
+      if (att.state === "waiting" || att.state === "alone") this.enqueue(ws);
       return;
     }
 
     if (msg.type === "ready" && att.state === "paired") {
-      const partner = this.partnerOf(ws, att.roomId);
-      if (!partner) {
-        // Opponent vanished without a close event reaching us.
-        setAttachment(ws, { state: "alone" });
-        this.send(ws, { type: "opponent_left" });
-        return;
+      this.handleReady(ws, att, msg.version);
+      return;
+    }
+
+    if (msg.type === "go_ack" && att.state === "racing") {
+      this.handleGoAck(ws, att);
+    }
+  }
+
+  handleReady(
+    ws: WebSocket,
+    att: Extract<Attachment, { state: "paired" }>,
+    chosenVersion: UuidVersion,
+  ): void {
+    const partner = this.partnerOf(ws, att.roomId);
+    if (!partner) {
+      // Opponent vanished without a close event reaching us.
+      setAttachment(ws, { state: "alone" });
+      this.send(ws, { type: "opponent_left" });
+      return;
+    }
+    const partnerAtt = getAttachment(partner);
+    if (partnerAtt?.state !== "paired" || !partnerAtt.readyVersion) {
+      // First to ready: record the version choice and wait for the partner.
+      setAttachment(ws, { state: "paired", roomId: att.roomId, readyVersion: chosenVersion });
+      this.send(partner, { type: "opponent_ready" });
+      return;
+    }
+
+    // Both ready. The player who readied first picks the UUID version.
+    const version = partnerAtt.readyVersion;
+    if (version === "v4") {
+      const [mine, theirs] = buildUuidV4Pair();
+      this.send(ws, { type: "start", version, uuid: mine, opponentUuid: theirs });
+      this.send(partner, { type: "start", version, uuid: theirs, opponentUuid: mine });
+      setAttachment(ws, { state: "paired", roomId: att.roomId });
+      setAttachment(partner, { state: "paired", roomId: att.roomId });
+      return;
+    }
+
+    // v7: decide the winner with a real race, the same way the local
+    // same-device implementation (race.ts) does — release both sides from a
+    // synchronized "go" and let whichever "go_ack" reaches this Durable
+    // Object first (genuine network/client timing, not an RNG) receive the
+    // earlier, lower-sorting UUID. See handleGoAck.
+    const goSentAt = Date.now();
+    setAttachment(ws, { state: "racing", roomId: att.roomId, goSentAt });
+    setAttachment(partner, { state: "racing", roomId: att.roomId, goSentAt });
+    this.send(ws, { type: "go" });
+    this.send(partner, { type: "go" });
+    void this.scheduleTimeoutAlarm(goSentAt + ROUND_TIMEOUT_MS);
+  }
+
+  handleGoAck(ws: WebSocket, att: Extract<Attachment, { state: "racing" }>): void {
+    if (att.firstUuid !== undefined) return; // duplicate ack, ignore
+
+    const partner = this.partnerOf(ws, att.roomId);
+    if (!partner) {
+      setAttachment(ws, { state: "alone" });
+      this.send(ws, { type: "opponent_left" });
+      return;
+    }
+    const partnerAtt = getAttachment(partner);
+    if (partnerAtt?.state !== "racing") return; // stale ack — round already resolved
+
+    if (partnerAtt.firstUuid === undefined) {
+      // First ack to arrive: issuing the UUID now guarantees it sorts lower
+      // (and loses) once the partner's is issued after it, below.
+      setAttachment(ws, { ...att, firstUuid: uuidV7() });
+      return;
+    }
+
+    // Second ack: this UUID is issued strictly after the partner's, so the
+    // uuid package's monotonic v7 state guarantees it sorts higher (wins).
+    const winnerUuid = uuidV7();
+    const loserUuid = partnerAtt.firstUuid;
+    this.send(ws, { type: "start", version: "v7", uuid: winnerUuid, opponentUuid: loserUuid });
+    this.send(partner, { type: "start", version: "v7", uuid: loserUuid, opponentUuid: winnerUuid });
+    setAttachment(ws, { state: "paired", roomId: att.roomId });
+    setAttachment(partner, { state: "paired", roomId: att.roomId });
+  }
+
+  // Only one alarm can be scheduled per Durable Object, so it's always set to
+  // the earliest deadline among all in-flight rounds; alarm() re-schedules
+  // for whatever's next after resolving anything due.
+  async scheduleTimeoutAlarm(at: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || at < current) {
+      await this.ctx.storage.setAlarm(at);
+    }
+  }
+
+  // Alarms (unlike plain setTimeout) survive hibernation, so a round can
+  // never hang forever even if the Durable Object was evicted from memory
+  // mid-round — this is the same safety net as race.ts's ROUND_TIMEOUT_MS.
+  async alarm(): Promise<void> {
+    const now = Date.now();
+    let nextDeadline: number | null = null;
+
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = getAttachment(ws);
+      if (att?.state !== "racing") continue;
+
+      if (att.goSentAt + ROUND_TIMEOUT_MS > now) {
+        nextDeadline =
+          nextDeadline === null
+            ? att.goSentAt + ROUND_TIMEOUT_MS
+            : Math.min(nextDeadline, att.goSentAt + ROUND_TIMEOUT_MS);
+        continue;
       }
-      const partnerAtt = getAttachment(partner);
-      if (partnerAtt?.state === "paired" && partnerAtt.readyVersion) {
-        // Both ready. The player who readied first picks the UUID version.
-        const version = partnerAtt.readyVersion;
-        const [mine, theirs] = buildUuidPair(version);
-        this.send(ws, { type: "start", version, uuid: mine, opponentUuid: theirs });
-        this.send(partner, { type: "start", version, uuid: theirs, opponentUuid: mine });
-        // Clear ready flags but keep the room for a rematch.
-        setAttachment(ws, { state: "paired", roomId: att.roomId });
+
+      const partner = this.partnerOf(ws, att.roomId);
+      const [uuid, opponentUuid] = coinFlipUuidV7Pair();
+      this.send(ws, { type: "start", version: "v7", uuid, opponentUuid });
+      setAttachment(ws, { state: "paired", roomId: att.roomId });
+      if (partner) {
+        this.send(partner, {
+          type: "start",
+          version: "v7",
+          uuid: opponentUuid,
+          opponentUuid: uuid,
+        });
         setAttachment(partner, { state: "paired", roomId: att.roomId });
-      } else {
-        setAttachment(ws, { state: "paired", roomId: att.roomId, readyVersion: msg.version });
-        this.send(partner, { type: "opponent_ready" });
       }
     }
+
+    if (nextDeadline !== null) await this.ctx.storage.setAlarm(nextDeadline);
   }
 
   webSocketClose(ws: WebSocket): void {
@@ -114,7 +234,7 @@ export class JankenLobby {
 
   handleLeave(ws: WebSocket): void {
     const att = getAttachment(ws);
-    if (att?.state !== "paired") return;
+    if (att?.state !== "paired" && att?.state !== "racing") return;
     const partner = this.partnerOf(ws, att.roomId);
     if (partner) {
       setAttachment(partner, { state: "alone" });
@@ -140,7 +260,7 @@ export class JankenLobby {
     return this.ctx.getWebSockets().find((o) => {
       if (o === ws) return false;
       const att = getAttachment(o);
-      return att?.state === "paired" && att.roomId === roomId;
+      return (att?.state === "paired" || att?.state === "racing") && att.roomId === roomId;
     });
   }
 
