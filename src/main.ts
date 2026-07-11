@@ -1,7 +1,7 @@
 import "./style.css";
 import { icon } from "@fortawesome/fontawesome-svg-core";
 import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
-import { createIcons, Swords, RefreshCcw, Globe, Users, Volume2 } from "lucide";
+import { createIcons, Swords, RefreshCcw, Globe, Users, LogOut, Volume2 } from "lucide";
 import {
   getRevealDelay,
   getRevealFrequency,
@@ -13,7 +13,7 @@ import { fallbackUuidV7Pair } from "./race";
 import { createDrawShareUrl, createWinnerShareUrl } from "./share";
 import { compareUuids, generateRaceUuids, generateUuidV4, type UuidVersion } from "./uuid";
 
-const ICONS = { Swords, RefreshCcw, Globe, Users, Volume2 };
+const ICONS = { Swords, RefreshCcw, Globe, Users, LogOut, Volume2 };
 const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";

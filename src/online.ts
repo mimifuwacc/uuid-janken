@@ -48,6 +48,18 @@ export class OnlineConnection {
   }
 
   connect(): void {
+    // A previous socket that's still CONNECTING or OPEN must not be
+    // abandoned here — e.g. a double-tap on 再接続 would otherwise leak it
+    // as an orphaned connection the server still matches players against,
+    // stranding whoever gets paired with it.
+    if (
+      this.ws !== null &&
+      this.ws.readyState !== WebSocket.CLOSING &&
+      this.ws.readyState !== WebSocket.CLOSED
+    ) {
+      return;
+    }
+
     this.closedByUs = false;
     const ws = new WebSocket(onlineSocketUrl());
     this.ws = ws;
@@ -147,7 +159,13 @@ export class OnlineConnection {
     // "close" hasn't been dispatched, or the UI wasn't refreshed after it
     // was. Surface the disconnect now instead of silently doing nothing, so
     // the click always leads to either the action or a reconnect prompt.
-    if (this.ws === null || this.ws.readyState === WebSocket.CLOSED) {
+    // CLOSING counts as unusable here too — it's already on its way out and
+    // will never accept this message.
+    if (
+      this.ws === null ||
+      this.ws.readyState === WebSocket.CLOSED ||
+      this.ws.readyState === WebSocket.CLOSING
+    ) {
       if (this.ws !== null) {
         this.stopPing();
         this.ws = null;
