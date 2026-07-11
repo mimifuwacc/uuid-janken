@@ -1,18 +1,19 @@
 import "./style.css";
 import { icon } from "@fortawesome/fontawesome-svg-core";
 import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
-import { createIcons, Swords, RefreshCcw, ChevronsDownUp, Volume2 } from "lucide";
+import { createIcons, Swords, RefreshCcw, Globe, Users, Volume2 } from "lucide";
 import {
   getRevealDelay,
   getRevealFrequency,
   getRevealShakeDistance,
   REVEAL_CHARACTER_COUNT,
 } from "./reveal";
+import { OnlineConnection, type OnlineHandlers } from "./online";
 import { fallbackUuidV7Pair } from "./race";
 import { createDrawShareUrl, createWinnerShareUrl } from "./share";
 import { compareUuids, generateRaceUuids, generateUuidV4, type UuidVersion } from "./uuid";
 
-const ICONS = { Swords, RefreshCcw, ChevronsDownUp, Volume2 };
+const ICONS = { Swords, RefreshCcw, Globe, Users, Volume2 };
 const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";
@@ -41,10 +42,16 @@ let revealTimer = 0;
 let audioContext: AudioContext | null = null;
 let revealShake: Animation | null = null;
 let uuidVersion: UuidVersion = "v4";
-// "最初は / 4〜 / じゃんけん...." — battle cry, version digit matches uuidVersion
-const callSequence = (): { text: string; cls: string; duration: number }[] => [
+// Online play: bottom half is always "you", top half is the opponent driven
+// by server events (see online.ts / worker/index.ts).
+let mode: "local" | "online" = "local";
+let online: OnlineConnection | null = null;
+let onlineMatched = false;
+let opponentLeft = false;
+// "最初は / 4〜 / じゃんけん...." — battle cry, version digit matches the round's version
+const callSequence = (version: UuidVersion): { text: string; cls: string; duration: number }[] => [
   { text: "最初は", cls: "call-saisho", duration: 1000 },
-  { text: uuidVersion === "v4" ? "4" : "7", cls: "call-four", duration: 950 },
+  { text: version === "v4" ? "4" : "7", cls: "call-four", duration: 950 },
   { text: "じゃんけん", cls: "call-janken", duration: 900 },
 ];
 const PARTICLE_COLORS = ["#00ff88", "#ff5f35", "#ffffff", "#ffdd00", "#00cfff", "#ff66cc"];
@@ -54,7 +61,9 @@ const DESKTOP_SPLIT_QUERY = "(min-width: 900px) and (orientation: landscape)";
 let halfEls: [HTMLElement, HTMLElement];
 let uuidEls: [HTMLElement, HTMLElement];
 let statusEls: [HTMLElement, HTMLElement];
+let labelEls: [HTMLElement, HTMLElement];
 let replaySlots: [HTMLElement, HTMLElement];
+let modeToggleEl: HTMLElement;
 let countdownEl: HTMLElement;
 let countdownHalves: [HTMLElement, HTMLElement];
 let versionToggleEls: HTMLElement[];
@@ -95,10 +104,11 @@ function setStatus(p: 0 | 1, html: string) {
   statusEls[p].innerHTML = html;
 }
 
-function setVersionTogglesVisible(visible: boolean) {
+function setIdleControlsVisible(visible: boolean) {
   for (const el of versionToggleEls) {
     el.style.display = visible ? "" : "none";
   }
+  modeToggleEl.style.display = visible ? "" : "none";
 }
 
 function prepareAudio() {
@@ -270,6 +280,18 @@ function spawnRipple(half: HTMLElement, x: number, y: number) {
 function onTap(player: 0 | 1, x: number, y: number) {
   prepareAudio();
   if (phase !== "idle") return;
+
+  if (mode === "online") {
+    // Only your own (bottom) half is tappable, and only once matched.
+    if (player !== 0 || !onlineMatched || ready[0]) return;
+    ready[0] = true;
+    halfEls[0].classList.add("ready");
+    spawnRipple(halfEls[0], x, y);
+    setStatus(0, "準備完了！");
+    online?.sendReady(uuidVersion);
+    return;
+  }
+
   if (ready[player]) return;
 
   ready[player] = true;
@@ -278,23 +300,22 @@ function onTap(player: 0 | 1, x: number, y: number) {
   setStatus(player, "準備完了！");
 
   if (ready[0] && ready[1]) {
-    startCountdown();
+    // Kicked off now so it has the whole countdown (2.6s) to resolve — the
+    // race finishes in well under that, v4 resolves immediately.
+    startCountdown(generateRaceUuids(uuidVersion), uuidVersion);
   }
 }
 
-function startCountdown() {
+function startCountdown(uuidsPromise: Promise<[string, string]>, version: UuidVersion) {
   phase = "countdown";
-  setVersionTogglesVisible(false);
+  setIdleControlsVisible(false);
   // Clear the "準備完了！" labels — they're not needed during the count.
   setStatus(0, "");
   setStatus(1, "");
   revealCount = 0;
-  // Kicked off now so it has the whole countdown (2.6s) to resolve — the
-  // race finishes in well under that, v4 resolves immediately.
-  const uuidsPromise = generateRaceUuids(uuidVersion);
 
   countdownEl.classList.add("active");
-  const sequence = callSequence();
+  const sequence = callSequence(version);
   let step = 0;
 
   const tick = () => {
@@ -313,7 +334,7 @@ function startCountdown() {
         // rejection so the game can't get stuck on the countdown screen.
         .catch(() => {
           const [player0, player1] =
-            uuidVersion === "v4" ? [generateUuidV4(), generateUuidV4()] : fallbackUuidV7Pair();
+            version === "v4" ? [generateUuidV4(), generateUuidV4()] : fallbackUuidV7Pair();
           uuids[0] = player0;
           uuids[1] = player1;
           startReveal();
@@ -460,41 +481,66 @@ function showResult() {
   }
 
   setTimeout(() => {
-    const replayLabel = winner === "draw" ? "あいこでしょ" : "もう一度";
-    const makeBtn = (target: HTMLElement) => {
-      const btn = document.createElement("button");
-      btn.className = "replay-btn";
-      btn.innerHTML = `<i data-lucide="refresh-ccw" class="btn-icon"></i>${replayLabel}`;
-      btn.addEventListener("touchstart", (e) => {
-        e.preventDefault();
-        resetGame();
-      });
-      btn.addEventListener("click", resetGame);
-      target.appendChild(btn);
-    };
-    const makeShareBtn = (target: HTMLElement, href: string) => {
-      const shareLink = document.createElement("a");
-      shareLink.className = "share-btn";
-      shareLink.href = href;
-      shareLink.target = "_blank";
-      shareLink.rel = "noopener noreferrer";
-      shareLink.innerHTML = `${TWITTER_ICON}ツイートする`;
-      target.appendChild(shareLink);
-    };
-    makeBtn(replaySlots[0]);
-    makeBtn(replaySlots[1]);
-    if (winner === "draw") {
-      const drawShareUrl = createDrawShareUrl(uuids[0], uuids[1], window.location.href);
-      makeShareBtn(replaySlots[0], drawShareUrl);
-      makeShareBtn(replaySlots[1], drawShareUrl);
-    } else if (winner !== null) {
-      makeShareBtn(
-        replaySlots[winner],
-        createWinnerShareUrl(uuids[0], uuids[1], window.location.href),
-      );
+    if (mode === "online") {
+      buildOnlineResultButtons();
+    } else {
+      const replayLabel = winner === "draw" ? "あいこでしょ" : "もう一度";
+      makeActionBtn(replaySlots[0], replayLabel, resetGame);
+      makeActionBtn(replaySlots[1], replayLabel, resetGame);
+      if (winner === "draw") {
+        const drawShareUrl = createDrawShareUrl(uuids[0], uuids[1], window.location.href);
+        makeShareBtn(replaySlots[0], drawShareUrl);
+        makeShareBtn(replaySlots[1], drawShareUrl);
+      } else if (winner !== null) {
+        makeShareBtn(
+          replaySlots[winner],
+          createWinnerShareUrl(uuids[0], uuids[1], window.location.href),
+        );
+      }
     }
     createIcons({ icons: ICONS });
   }, 1800);
+}
+
+function makeActionBtn(target: HTMLElement, label: string, action: () => void) {
+  const btn = document.createElement("button");
+  btn.className = "replay-btn";
+  btn.innerHTML = `<i data-lucide="refresh-ccw" class="btn-icon"></i>${label}`;
+  btn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    action();
+  });
+  btn.addEventListener("click", action);
+  target.appendChild(btn);
+}
+
+function makeShareBtn(target: HTMLElement, href: string) {
+  const shareLink = document.createElement("a");
+  shareLink.className = "share-btn";
+  shareLink.href = href;
+  shareLink.target = "_blank";
+  shareLink.rel = "noopener noreferrer";
+  shareLink.innerHTML = `${TWITTER_ICON}ツイートする`;
+  target.appendChild(shareLink);
+}
+
+// Online result screen: everything lives on your (bottom) half — the
+// opponent's half never gets buttons. Reconnect/requeue take priority over a
+// plain rematch when the connection or the opponent is gone.
+function buildOnlineResultButtons() {
+  if (!online?.isOpen) {
+    makeActionBtn(replaySlots[0], "再接続", requeueOnline);
+  } else if (opponentLeft) {
+    makeActionBtn(replaySlots[0], "対戦相手を探す", requeueOnline);
+  } else {
+    const label = winner === "draw" ? "あいこでしょ" : "もう一度";
+    makeActionBtn(replaySlots[0], label, readyAgainOnline);
+  }
+  if (winner === "draw") {
+    makeShareBtn(replaySlots[0], createDrawShareUrl(uuids[0], uuids[1], window.location.href));
+  } else if (winner === 0) {
+    makeShareBtn(replaySlots[0], createWinnerShareUrl(uuids[0], uuids[1], window.location.href));
+  }
 }
 
 function resetGame() {
@@ -516,10 +562,123 @@ function resetGame() {
   uuidEls[1].innerHTML = "";
   replaySlots[0].innerHTML = "";
   replaySlots[1].innerHTML = "";
-  setStatus(0, "タップして準備");
-  setStatus(1, "タップして準備");
-  setVersionTogglesVisible(true);
+  if (mode === "online") {
+    setStatus(0, onlineMatched ? "タップして準備" : "");
+    setStatus(1, onlineMatched ? "" : "対戦相手を探しています…");
+  } else {
+    setStatus(0, "タップして準備");
+    setStatus(1, "タップして準備");
+  }
+  setIdleControlsVisible(true);
 
+  createIcons({ icons: ICONS });
+}
+
+/* ===== Online mode ===== */
+
+const onlineHandlers: OnlineHandlers = {
+  onWaiting: () => {
+    onlineMatched = false;
+    if (phase === "idle") {
+      setStatus(0, "");
+      setStatus(1, "対戦相手を探しています…");
+    }
+  },
+  onMatched: () => {
+    onlineMatched = true;
+    opponentLeft = false;
+    if (phase === "idle") {
+      setStatus(0, "タップして準備");
+      setStatus(1, "対戦相手が見つかりました！");
+    }
+  },
+  onOpponentReady: () => {
+    if (phase === "idle") {
+      halfEls[1].classList.add("ready");
+      setStatus(1, "準備完了！");
+    }
+  },
+  onStart: (version, mine, theirs) => {
+    if (phase !== "idle") return;
+    startCountdown(Promise.resolve<[string, string]>([mine, theirs]), version);
+  },
+  onOpponentLeft: () => {
+    onlineMatched = false;
+    opponentLeft = true;
+    // Mid-round the reveal plays out with the UUIDs already delivered; the
+    // result screen then offers "対戦相手を探す" instead of a rematch.
+    if (phase === "idle") {
+      requeueOnline();
+    }
+  },
+  onDisconnected: () => {
+    onlineMatched = false;
+    if (phase === "idle") {
+      setStatus(0, "");
+      setStatus(1, "接続できませんでした");
+      replaySlots[0].innerHTML = "";
+      makeActionBtn(replaySlots[0], "再接続", requeueOnline);
+      createIcons({ icons: ICONS });
+    }
+    // Mid-round: the result screen's button offers 再接続 instead.
+  },
+};
+
+// Rematch with the same opponent — clicking the button counts as your ready tap.
+function readyAgainOnline() {
+  resetGame();
+  ready[0] = true;
+  halfEls[0].classList.add("ready");
+  setStatus(0, "準備完了！");
+  online?.sendReady(uuidVersion);
+}
+
+// Look for a new opponent, reconnecting first if the socket has died.
+function requeueOnline() {
+  opponentLeft = false;
+  onlineMatched = false;
+  resetGame();
+  if (online?.isOpen) {
+    online.sendRequeue();
+  } else {
+    online?.connect();
+  }
+}
+
+function toggleMode() {
+  prepareAudio();
+  if (phase !== "idle" && phase !== "result") return;
+  const app = document.getElementById("app")!;
+  if (mode === "local") {
+    mode = "online";
+    onlineMatched = false;
+    opponentLeft = false;
+    app.classList.add("online");
+    updateModeUi();
+    resetGame();
+    online = new OnlineConnection(onlineHandlers);
+    online.connect();
+  } else {
+    online?.close();
+    online = null;
+    mode = "local";
+    onlineMatched = false;
+    opponentLeft = false;
+    app.classList.remove("online");
+    updateModeUi();
+    resetGame();
+  }
+}
+
+function updateModeUi() {
+  labelEls[0].textContent = mode === "online" ? "あなた" : "PLAYER 1";
+  labelEls[1].textContent = mode === "online" ? "相手" : "PLAYER 2";
+  // The button shows the CURRENT mode (tapping switches to the other one);
+  // the green highlight while online reinforces which state is active.
+  modeToggleEl.innerHTML =
+    mode === "online"
+      ? `<i data-lucide="globe" class="mode-icon"></i>オンライン対戦`
+      : `<i data-lucide="users" class="mode-icon"></i>ローカル対戦`;
   createIcons({ icons: ICONS });
 }
 
@@ -546,7 +705,7 @@ function init() {
     <div class="half top" id="half-1">${halfInner(2)}</div>
     <div class="divider">
       <button type="button" class="version-toggle version-toggle-left">${uuidVersion}</button>
-      <i data-lucide="chevrons-down-up" class="divider-icon"></i>
+      <button type="button" class="mode-toggle" id="mode-toggle"></button>
       <button type="button" class="version-toggle version-toggle-right">${uuidVersion}</button>
     </div>
     <div class="half bottom" id="half-0">${halfInner(1)}</div>
@@ -573,6 +732,13 @@ function init() {
     document.getElementById("replay-0") as HTMLElement,
     document.getElementById("replay-1") as HTMLElement,
   ];
+  labelEls = [
+    halfEls[0].querySelector(".player-label") as HTMLElement,
+    halfEls[1].querySelector(".player-label") as HTMLElement,
+  ];
+  modeToggleEl = document.getElementById("mode-toggle") as HTMLElement;
+  modeToggleEl.addEventListener("click", toggleMode);
+  updateModeUi();
   countdownEl = document.getElementById("countdown") as HTMLElement;
   countdownHalves = [
     document.getElementById("countdown-bottom") as HTMLElement,
