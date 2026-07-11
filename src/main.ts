@@ -445,10 +445,11 @@ function showResult() {
   }
 
   setTimeout(() => {
+    const replayLabel = winner === "draw" ? "あいこでしょ" : "もう一度";
     const makeBtn = (target: HTMLElement) => {
       const btn = document.createElement("button");
       btn.className = "replay-btn";
-      btn.innerHTML = `<i data-lucide="refresh-ccw" class="btn-icon"></i>もう一度`;
+      btn.innerHTML = `<i data-lucide="refresh-ccw" class="btn-icon"></i>${replayLabel}`;
       btn.addEventListener("touchstart", (e) => {
         e.preventDefault();
         resetGame();
