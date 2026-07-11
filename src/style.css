@@ -126,6 +126,7 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  position: relative;
   z-index: 10;
   gap: 16px;
   padding: 0 24px;
@@ -150,6 +151,74 @@ body {
   height: 28px;
   stroke: rgba(255, 255, 255, 0.25);
   flex-shrink: 0;
+}
+
+/* Absolutely positioned so it never shifts the centered divider icon.
+   Kept understated, in the same register as .divider-icon, rather than
+   competing with it for attention. One sits on each side of the icon,
+   the left one rotated 180deg (--toggle-rotate), so the pair is point-
+   symmetric like the halves: each player has one readable from their seat. */
+.version-toggle {
+  position: absolute;
+  top: 50%;
+  padding: 8px 18px;
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+  transform: translateY(-50%) rotate(var(--toggle-rotate, 0deg));
+}
+
+.version-toggle-right {
+  right: 20px;
+}
+
+.version-toggle-left {
+  left: 20px;
+  --toggle-rotate: 180deg;
+}
+
+.version-toggle:active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.version-toggle.switching {
+  animation: version-toggle-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Gold flash matches .call-four — the same color used for the version
+   digit in the countdown call, so the accent reads as "that's the version". */
+@keyframes version-toggle-pop {
+  0% {
+    transform: translateY(-50%) rotate(var(--toggle-rotate, 0deg)) scale(0.7);
+  }
+  40% {
+    transform: translateY(-50%) rotate(var(--toggle-rotate, 0deg)) scale(1.35);
+    border-color: #ffdd00;
+    color: #ffdd00;
+    text-shadow:
+      0 0 16px rgba(255, 220, 0, 0.9),
+      0 0 32px rgba(255, 220, 0, 0.5);
+  }
+  70% {
+    transform: translateY(-50%) rotate(var(--toggle-rotate, 0deg)) scale(0.95);
+  }
+  100% {
+    transform: translateY(-50%) rotate(var(--toggle-rotate, 0deg)) scale(1);
+  }
 }
 
 /* ===== Player label ===== */
@@ -730,6 +799,55 @@ body {
       rgba(255, 255, 255, 0.12) 60%,
       transparent
     );
+  }
+
+  /* The mobile layout positions the toggles beside the divider icon
+     (top/left/right) for a horizontal divider; on the vertical desktop
+     divider that overlaps the icon and its `pointer-events: none` blocks
+     clicks. Stack them above/below the icon instead, centered on the
+     divider's vertical axis, and re-enable pointer events. Both players
+     face the same way on desktop, so the 180deg --toggle-rotate used to
+     make the left toggle readable upside-down (for the rotated .half.top)
+     no longer applies. */
+  .version-toggle {
+    top: auto;
+    left: 50%;
+    right: auto;
+    --toggle-rotate: 0deg;
+    transform: translateX(-50%);
+    pointer-events: auto;
+  }
+
+  .version-toggle-left {
+    top: 24px;
+  }
+
+  .version-toggle-right {
+    bottom: 24px;
+  }
+
+  .version-toggle.switching {
+    animation-name: version-toggle-pop-desktop;
+  }
+
+  @keyframes version-toggle-pop-desktop {
+    0% {
+      transform: translateX(-50%) scale(0.7);
+    }
+    40% {
+      transform: translateX(-50%) scale(1.35);
+      border-color: #ffdd00;
+      color: #ffdd00;
+      text-shadow:
+        0 0 16px rgba(255, 220, 0, 0.9),
+        0 0 32px rgba(255, 220, 0, 0.5);
+    }
+    70% {
+      transform: translateX(-50%) scale(0.95);
+    }
+    100% {
+      transform: translateX(-50%) scale(1);
+    }
   }
 
   /* One centered countdown call is enough on desktop (no facing player). */

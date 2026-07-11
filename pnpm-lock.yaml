@@ -225,6 +225,9 @@ importers:
       lucide:
         specifier: ^1.23.0
         version: 1.23.0
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
     devDependencies:
       typescript:
         specifier: ~6.0.2
@@ -1421,6 +1424,10 @@ packages:
   unenv@2.0.0-rc.24:
     resolution: {integrity: sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw==}
 
+  uuid@14.0.1:
+    resolution: {integrity: sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==}
+    hasBin: true
+
   vite-plus@0.2.3:
     resolution: {integrity: sha512-Rv2jyRNpvZR8MlxJJTmQXrt6VdRSe8Yw9QI1ZzMt5rKMPFAGhnMMktRMjfuZpgnRA+d5eY7g72Ypp2AjV74lyQ==}
     engines: {node: ^20.19.0 || ^22.18.0 || >=24.11.0}
@@ -2346,6 +2353,8 @@ snapshots:
   unenv@2.0.0-rc.24:
     dependencies:
       pathe: 2.0.3
+
+  uuid@14.0.1: {}
 
   vite-plus@0.2.3(@voidzero-dev/vite-plus-core@0.2.3(esbuild@0.28.1)(typescript@6.0.3))(esbuild@0.28.1)(typescript@6.0.3):
     dependencies:
