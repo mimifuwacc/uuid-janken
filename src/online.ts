@@ -65,6 +65,11 @@ export class OnlineConnection {
         case "opponent_ready":
           this.handlers.onOpponentReady();
           break;
+        case "go":
+          // Ack immediately — the server decides the v7 winner by whichever
+          // side's ack arrives first, so any delay here costs the race.
+          this.send({ type: "go_ack" });
+          break;
         case "start":
           this.handlers.onStart(msg.version, msg.uuid, msg.opponentUuid);
           break;
