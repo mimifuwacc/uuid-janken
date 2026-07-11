@@ -2,10 +2,6 @@
 
 https://uuid-janken.mimifuwa.cc
 
-## オンライン対戦
-
-divider 中央のモード切替ボタン（現在のモードを「ローカル対戦」/「オンライン対戦」で表示）から、WebSocket でランダムな相手とマッチングして対戦できます。マッチングは Cloudflare Workers の Durable Object（`worker/index.ts`）が仲介し、UUID ペアもサーバー側で生成します（v7 はコイントスで勝者を決定）。UUID バージョンは先に準備完了した側の選択が採用されます。
-
 ## 開発
 
 [Vite+](https://viteplus.dev/)（`vp`）を使っています．
