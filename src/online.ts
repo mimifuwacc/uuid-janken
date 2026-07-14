@@ -141,10 +141,6 @@ export class OnlineConnection {
     this.send({ type: "requeue", version });
   }
 
-  sendLeave(version: UuidVersion): void {
-    this.send({ type: "leave", version });
-  }
-
   close(): void {
     this.closedByUs = true;
     this.stopPing();
