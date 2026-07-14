@@ -11,6 +11,12 @@ vp install   # 依存インストール
 vp dev       # 開発サーバー起動
 ```
 
+`vp dev` は静的アセットのみで、`/ws`（オンライン対戦）は動きません。オンライン対戦を含めてローカルで動かすには:
+
+```sh
+pnpm preview:wrangler   # ビルドして wrangler dev（Worker + アセット）で起動
+```
+
 その他:
 
 ```sh

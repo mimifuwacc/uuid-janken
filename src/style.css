@@ -146,11 +146,48 @@ body {
   );
 }
 
-.divider-icon {
-  width: 28px;
-  height: 28px;
-  stroke: rgba(255, 255, 255, 0.25);
+/* Center of the divider: switches between local face-to-face play and
+   online random matchmaking. Same understated register as .version-toggle. */
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.mode-toggle:active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.mode-icon,
+.mode-toggle svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  flex-shrink: 0;
+}
+
+/* Lit up while online, in the bottom player's color — that's "your" seat. */
+#app.online .mode-toggle {
+  border-color: rgba(var(--color-p0-rgb), 0.5);
+  color: var(--color-p0);
 }
 
 /* Absolutely positioned so it never shifts the centered divider icon.
@@ -712,6 +749,21 @@ body {
   background: rgba(var(--player-color-rgb), 0.12);
 }
 
+/* Secondary action next to the rematch button — same shape, muted so the
+   rematch stays the visually primary choice. */
+.replay-btn.leave-btn {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.replay-btn.leave-btn svg {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+
+.replay-btn.leave-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 @keyframes replay-fade {
   from {
     opacity: 0;
@@ -752,6 +804,27 @@ body {
   85% {
     transform: translateX(2px);
   }
+}
+
+/* ===== Online mode ===== */
+/* One player per device: the top half is the opponent, mirrored back to
+   normal orientation and not tappable. Both version toggles stay visible
+   as-is and control your own selection — the opponent picks theirs on their
+   own device. */
+
+#app.online .half.top {
+  transform: none;
+  cursor: default;
+}
+
+#app.online .half.top .tap-hint,
+#app.online .half.top .sound-note {
+  display: none;
+}
+
+/* Single viewer — one centered countdown call is enough (as on desktop). */
+#app.online .countdown-half.for-top {
+  display: none;
 }
 
 /* ===== Desktop: split left/right instead of top/bottom ===== */
@@ -801,10 +874,30 @@ body {
     );
   }
 
-  /* The mobile layout positions the toggles beside the divider icon
-     (top/left/right) for a horizontal divider; on the vertical desktop
-     divider that overlaps the icon and its `pointer-events: none` blocks
-     clicks. Stack them above/below the icon instead, centered on the
+  /* The narrow (56px) divider column is too tight for the horizontal pill,
+     so lift it out of the column flow entirely — same absolute-and-centered
+     trick as .version-toggle below — rather than rotating its text/icon
+     vertical-rl, which garbled the layout. Needs pointer events re-enabled
+     (the divider disables them so it doesn't block taps on the halves).
+     Chromium shrinks an absolutely positioned flex child of a column flex
+     container down to that container's cross-axis size (56px here) unless
+     told otherwise, which wrapped the label into a squashed, unreadable
+     stack — width: max-content + nowrap forces it back to its natural,
+     content-based size regardless of the divider's width. */
+  .mode-toggle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: max-content;
+    white-space: nowrap;
+    pointer-events: auto;
+  }
+
+  /* The mobile layout positions the toggles beside the mode toggle
+     (left/right) for a horizontal divider; on the vertical desktop
+     divider that would overlap it, and the divider's `pointer-events:
+     none` blocks clicks. Stack them above/below instead, centered on the
      divider's vertical axis, and re-enable pointer events. Both players
      face the same way on desktop, so the 180deg --toggle-rotate used to
      make the left toggle readable upside-down (for the rotated .half.top)

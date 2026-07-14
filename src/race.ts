@@ -1,4 +1,5 @@
 import { v7 as uuidV7 } from "uuid";
+import { coinFlipUuidV7Pair } from "./protocol";
 
 // Decides which player's UUID v7 "wins" (sorts higher) by actually racing two
 // Worker threads (see race-worker.ts), instead of a coin-flip RNG bit. Both
@@ -146,15 +147,10 @@ function runRound(): Promise<{ uuidA: string; uuidB: string } | null> {
 
 // Builds a UUID v7 pair without racing workers, for use when
 // SharedArrayBuffer/cross-origin isolation isn't available or the worker race
-// itself fails to resolve. Two back-to-back argument-less v7() calls: the
-// package's internal monotonic state guarantees the second UUID always sorts
-// higher, and a coin flip decides which player gets it, so the fallback stays
-// as fair as the real race.
+// itself fails to resolve. The coin-flip pair (implementation shared with the
+// online server, see protocol.ts) stays as fair as the real race.
 export function fallbackUuidV7Pair(): [string, string] {
-  const lower = uuidV7();
-  const higher = uuidV7();
-  const player0Wins = Math.random() < 0.5;
-  return player0Wins ? [higher, lower] : [lower, higher];
+  return coinFlipUuidV7Pair();
 }
 
 // Returns a pair of UUID v7 strings, one per player, decided by racing two

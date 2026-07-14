@@ -1,6 +1,7 @@
+import type { UuidVersion } from "./protocol";
 import { raceUuidV7Pair } from "./race";
 
-export type UuidVersion = "v4" | "v7";
+export type { UuidVersion } from "./protocol";
 
 export function generateUuidV4(): string {
   return crypto.randomUUID();
