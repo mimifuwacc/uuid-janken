@@ -874,13 +874,24 @@ body {
     );
   }
 
-  /* The centered mode toggle reads vertically inside the narrow divider
-     column, and needs pointer events re-enabled (the divider disables them
-     so it doesn't block taps on the halves). */
+  /* The narrow (56px) divider column is too tight for the horizontal pill,
+     so lift it out of the column flow entirely — same absolute-and-centered
+     trick as .version-toggle below — rather than rotating its text/icon
+     vertical-rl, which garbled the layout. Needs pointer events re-enabled
+     (the divider disables them so it doesn't block taps on the halves).
+     Chromium shrinks an absolutely positioned flex child of a column flex
+     container down to that container's cross-axis size (56px here) unless
+     told otherwise, which wrapped the label into a squashed, unreadable
+     stack — width: max-content + nowrap forces it back to its natural,
+     content-based size regardless of the divider's width. */
   .mode-toggle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: max-content;
+    white-space: nowrap;
     pointer-events: auto;
-    writing-mode: vertical-rl;
-    padding: 16px 8px;
   }
 
   /* The mobile layout positions the toggles beside the mode toggle
