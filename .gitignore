@@ -28,3 +28,6 @@ dist-ssr
 
 # Wrangler local dev artifacts
 .wrangler
+
+# direnv / Nix local cache
+.direnv
