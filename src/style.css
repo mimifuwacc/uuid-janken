@@ -961,3 +961,50 @@ body {
     display: none;
   }
 }
+
+/* ===== Short viewports: compress the result layout ===== */
+/* Each half is only ~(100vh - divider)/2 tall, so on a short screen the
+   winner's uuid + WIN + up to three stacked buttons (rematch / return-to-local
+   / share) overflow the half and get clipped. Progressively tighten the gaps,
+   button sizing and the WIN status so everything stays on-screen. Keyed on
+   height, so it also helps the desktop split layout on short landscape
+   windows. */
+@media (max-height: 760px) {
+  .half {
+    gap: 10px;
+  }
+
+  .replay-slot {
+    gap: 8px;
+  }
+
+  .replay-btn,
+  .share-btn {
+    margin-top: 4px;
+    padding: 11px 28px;
+    font-size: 16px;
+  }
+}
+
+@media (max-height: 560px) {
+  .half {
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .replay-btn,
+  .share-btn {
+    padding: 9px 22px;
+    font-size: 14px;
+    letter-spacing: 2px;
+  }
+
+  .status {
+    min-height: 0;
+  }
+
+  .half.win .status {
+    font-size: clamp(22px, 6vw, 34px);
+    letter-spacing: 3px;
+  }
+}
