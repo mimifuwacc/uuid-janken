@@ -103,18 +103,6 @@ export class JankenLobby {
 
     if (!att) return; // anything else needs prior state
 
-    if (msg.type === "leave" && att.state === "paired") {
-      // Voluntarily ends the pairing between rounds (the opponent is still
-      // connected, unlike "requeue"/opponent_left) and looks for someone new.
-      const partner = this.partnerOf(ws, att.roomId);
-      if (partner) {
-        setAttachment(partner, { state: "alone" });
-        this.send(partner, { type: "opponent_left" });
-      }
-      this.enqueue(ws, msg.version);
-      return;
-    }
-
     if (msg.type === "ready" && att.state === "paired") {
       this.handleReady(ws, att, msg.version);
       return;

@@ -12,14 +12,13 @@ export type UuidVersion = "v4" | "v7";
 // version so matching only ever pairs two players who both want the same
 // one (see worker/index.ts's enqueue()). "go_ack" is sent the instant "go" is
 // received, to race against the opponent's — see ServerMessage's "go" and
-// worker/index.ts's v7 handling. "leave" voluntarily ends the current pairing
-// (opponent still connected) to look for someone else, distinct from
-// "requeue" which only applies once already unpaired.
+// worker/index.ts's v7 handling. Leaving a pairing needs no message: the
+// client just closes the socket, and the server's webSocketClose handler
+// relays it to the opponent as opponent_left.
 export type ClientMessage =
   | { type: "ready"; version: UuidVersion }
   | { type: "requeue"; version: UuidVersion }
-  | { type: "go_ack" }
-  | { type: "leave"; version: UuidVersion };
+  | { type: "go_ack" };
 
 // Server → client, in rough lifecycle order. "start" carries both UUIDs up
 // front — the reveal is pure presentation, the outcome is already decided.

@@ -562,6 +562,19 @@ body {
   transform: scale(0.8);
 }
 
+/* On the result screen the tap hint and sound notice are already invisible
+   (faded out on the ready tap) but still reserve vertical space — collapse
+   them so the reclaimed room keeps the replay/share buttons from being clipped
+   by the half's overflow: hidden on short viewports. */
+.half.win .tap-hint,
+.half.lose .tap-hint,
+.half.draw .tap-hint,
+.half.win .sound-note,
+.half.lose .sound-note,
+.half.draw .sound-note {
+  display: none;
+}
+
 /* ===== Ripple ===== */
 
 .ripple {

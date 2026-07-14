@@ -1,7 +1,7 @@
 import "./style.css";
 import { icon } from "@fortawesome/fontawesome-svg-core";
 import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
-import { createIcons, Swords, RefreshCcw, Globe, Users, LogOut, Volume2 } from "lucide";
+import { createIcons, Swords, RefreshCcw, Globe, Users, Volume2 } from "lucide";
 import {
   getRevealDelay,
   getRevealFrequency,
@@ -13,7 +13,7 @@ import { fallbackUuidV7Pair } from "./race";
 import { createDrawShareUrl, createLoserShareUrl, createWinnerShareUrl } from "./share";
 import { compareUuids, generateRaceUuids, generateUuidV4, type UuidVersion } from "./uuid";
 
-const ICONS = { Swords, RefreshCcw, Globe, Users, LogOut, Volume2 };
+const ICONS = { Swords, RefreshCcw, Globe, Users, Volume2 };
 const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";
@@ -533,7 +533,7 @@ function makeShareBtn(target: HTMLElement, href: string) {
 // Online result screen: everything lives on your (bottom) half — the
 // opponent's half never gets buttons. Reconnect/requeue take priority over a
 // plain rematch when the connection or the opponent is gone; a still-present
-// opponent additionally gets a "disconnect and find someone else" option.
+// opponent additionally gets a "leave online and go back to local play" option.
 function buildOnlineResultButtons() {
   if (!online?.isOpen) {
     makeActionBtn(replaySlots[0], "再接続", requeueOnline);
@@ -542,7 +542,10 @@ function buildOnlineResultButtons() {
   } else {
     const label = winner === "draw" ? "あいこでしょ" : "もう一度";
     makeActionBtn(replaySlots[0], label, readyAgainOnline);
-    makeActionBtn(replaySlots[0], "切断する", leaveOpponent, "log-out", "leave-btn");
+    // "もう一度" already covers rematching; the second slot instead drops back
+    // to offline local play (closing the socket, which the server relays to
+    // the opponent as opponent_left — same path as toggleMode/tab close).
+    makeActionBtn(replaySlots[0], "ローカルに戻る", switchToLocalMode, "users", "leave-btn");
   }
   // Unlike local play (strangers with no one to lose face in front of),
   // online losses get a share button too — see createLoserShareUrl().
@@ -662,13 +665,18 @@ function readyAgainOnline() {
   online?.sendReady(uuidVersion);
 }
 
-// Voluntarily leave the current opponent (who's still connected) and go back
-// to matchmaking for someone new. Distinct from requeueOnline(), which only
-// applies once the opponent is already gone.
-function leaveOpponent() {
-  online?.sendLeave(uuidVersion);
+// Leave online play entirely and return to offline local mode. Closing the
+// socket is what notifies the (still-connected) opponent — the server's
+// webSocketClose handler relays it as opponent_left, just like a tab close.
+// Also the online→local path shared with toggleMode().
+function switchToLocalMode() {
+  online?.close();
+  online = null;
+  mode = "local";
   onlineMatched = false;
   opponentLeft = false;
+  document.getElementById("app")!.classList.remove("online");
+  updateModeUi();
   resetGame();
 }
 
@@ -698,14 +706,7 @@ function toggleMode() {
     online = new OnlineConnection(onlineHandlers);
     online.connect(uuidVersion);
   } else {
-    online?.close();
-    online = null;
-    mode = "local";
-    onlineMatched = false;
-    opponentLeft = false;
-    app.classList.remove("online");
-    updateModeUi();
-    resetGame();
+    switchToLocalMode();
   }
 }
 
