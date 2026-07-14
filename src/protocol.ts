@@ -6,17 +6,20 @@ import { v7 as uuidV7 } from "uuid";
 
 export type UuidVersion = "v4" | "v7";
 
-// Client → server. "ready" doubles as the rematch request; "requeue" asks for
-// a new opponent after the previous one left or after a reconnect. "go_ack" is
-// sent the instant "go" is received, to race against the opponent's — see
-// ServerMessage's "go" and worker/index.ts's v7 handling. "leave" voluntarily
-// ends the current pairing (opponent still connected) to look for someone
-// else, distinct from "requeue" which only applies once already unpaired.
+// Client → server. "ready" doubles as the rematch request; "requeue" asks to
+// (re)join the matchmaking queue — sent right after connecting, and again
+// whenever the version toggle changes while still unmatched — carrying the
+// version so matching only ever pairs two players who both want the same
+// one (see worker/index.ts's enqueue()). "go_ack" is sent the instant "go" is
+// received, to race against the opponent's — see ServerMessage's "go" and
+// worker/index.ts's v7 handling. "leave" voluntarily ends the current pairing
+// (opponent still connected) to look for someone else, distinct from
+// "requeue" which only applies once already unpaired.
 export type ClientMessage =
   | { type: "ready"; version: UuidVersion }
-  | { type: "requeue" }
+  | { type: "requeue"; version: UuidVersion }
   | { type: "go_ack" }
-  | { type: "leave" };
+  | { type: "leave"; version: UuidVersion };
 
 // Server → client, in rough lifecycle order. "start" carries both UUIDs up
 // front — the reveal is pure presentation, the outcome is already decided.

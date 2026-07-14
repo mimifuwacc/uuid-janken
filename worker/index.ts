@@ -37,14 +37,17 @@ export default {
 const ROUND_TIMEOUT_MS = 4000;
 
 // Per-socket state, persisted via (de)serializeAttachment so it survives
-// hibernation. "waiting" sockets sit in the matchmaking queue; "alone" means
-// the opponent left mid-room — the client must explicitly send "requeue" so a
-// fresh match can never barge in while its reveal animation is still playing.
-// "racing" is a v7 round in flight: both sides were sent "go" at goSentAt,
-// and firstUuid gets filled in the instant one side's go_ack arrives (see
-// webSocketMessage's "go_ack" handling).
+// hibernation. "waiting" sockets sit in the matchmaking queue, tagged with
+// the version they want to play — enqueue() only ever pairs two sockets with
+// the same tag, so two players can never be matched wanting different
+// versions in the first place. "alone" means the opponent left mid-room —
+// the client must explicitly send "requeue" so a fresh match can never barge
+// in while its reveal animation is still playing. "racing" is a v7 round in
+// flight: both sides were sent "go" at goSentAt, and firstUuid gets filled in
+// the instant one side's go_ack arrives (see webSocketMessage's "go_ack"
+// handling).
 type Attachment =
-  | { state: "waiting" }
+  | { state: "waiting"; version: UuidVersion }
   | { state: "alone" }
   | { state: "paired"; roomId: string; readyVersion?: UuidVersion }
   | { state: "racing"; roomId: string; goSentAt: number; firstUuid?: string };
@@ -72,7 +75,9 @@ export class JankenLobby {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
-    this.enqueue(server);
+    // No auto-enqueue here — the client sends its own "requeue" (carrying
+    // its chosen version) right after connecting, so even the very first
+    // queue entry is already version-tagged.
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -85,14 +90,18 @@ export class JankenLobby {
       return;
     }
     const att = getAttachment(ws);
-    if (!att) return;
 
     if (msg.type === "requeue") {
-      // Ignored unless the player is actually unpaired — requeueing mid-round
-      // (paired or racing) would abandon a round still in progress.
-      if (att.state === "waiting" || att.state === "alone") this.enqueue(ws);
+      // Allowed with no prior state at all (att === null, the very first
+      // message after connecting) or once actually unpaired — ignored
+      // mid-round (paired/racing), which would abandon a round in progress.
+      if (att === null || att.state === "waiting" || att.state === "alone") {
+        this.enqueue(ws, msg.version);
+      }
       return;
     }
+
+    if (!att) return; // anything else needs prior state
 
     if (msg.type === "leave" && att.state === "paired") {
       // Voluntarily ends the pairing between rounds (the opponent is still
@@ -102,7 +111,7 @@ export class JankenLobby {
         setAttachment(partner, { state: "alone" });
         this.send(partner, { type: "opponent_left" });
       }
-      this.enqueue(ws);
+      this.enqueue(ws, msg.version);
       return;
     }
 
@@ -136,7 +145,9 @@ export class JankenLobby {
       return;
     }
 
-    // Both ready. The player who readied first picks the UUID version.
+    // Both ready. Matchmaking only ever pairs same-version players (see
+    // enqueue()) and the client locks its version toggle once matched, so
+    // chosenVersion and partnerAtt.readyVersion are guaranteed equal here.
     const version = partnerAtt.readyVersion;
     if (version === "v4") {
       const [mine, theirs] = buildUuidV4Pair();
@@ -254,12 +265,17 @@ export class JankenLobby {
     }
   }
 
-  enqueue(ws: WebSocket): void {
-    setAttachment(ws, { state: "waiting" });
+  enqueue(ws: WebSocket, version: UuidVersion): void {
+    setAttachment(ws, { state: "waiting", version });
     this.send(ws, { type: "waiting" });
-    const other = this.ctx
-      .getWebSockets()
-      .find((o) => o !== ws && getAttachment(o)?.state === "waiting");
+    // Only ever pairs sockets wanting the same version — see the Attachment
+    // type comment. Different-version waiters simply keep waiting until a
+    // like-minded opponent (or a version toggle) comes along.
+    const other = this.ctx.getWebSockets().find((o) => {
+      if (o === ws) return false;
+      const oAtt = getAttachment(o);
+      return oAtt?.state === "waiting" && oAtt.version === version;
+    });
     if (!other) return;
     const roomId = crypto.randomUUID();
     setAttachment(ws, { state: "paired", roomId });

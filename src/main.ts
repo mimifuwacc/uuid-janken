@@ -10,7 +10,7 @@ import {
 } from "./reveal";
 import { OnlineConnection, type OnlineHandlers } from "./online";
 import { fallbackUuidV7Pair } from "./race";
-import { createDrawShareUrl, createWinnerShareUrl } from "./share";
+import { createDrawShareUrl, createLoserShareUrl, createWinnerShareUrl } from "./share";
 import { compareUuids, generateRaceUuids, generateUuidV4, type UuidVersion } from "./uuid";
 
 const ICONS = { Swords, RefreshCcw, Globe, Users, LogOut, Volume2 };
@@ -542,12 +542,16 @@ function buildOnlineResultButtons() {
   } else {
     const label = winner === "draw" ? "あいこでしょ" : "もう一度";
     makeActionBtn(replaySlots[0], label, readyAgainOnline);
-    makeActionBtn(replaySlots[0], "この相手と切断する", leaveOpponent, "log-out", "leave-btn");
+    makeActionBtn(replaySlots[0], "切断する", leaveOpponent, "log-out", "leave-btn");
   }
+  // Unlike local play (strangers with no one to lose face in front of),
+  // online losses get a share button too — see createLoserShareUrl().
   if (winner === "draw") {
     makeShareBtn(replaySlots[0], createDrawShareUrl(uuids[0], uuids[1], window.location.href));
   } else if (winner === 0) {
     makeShareBtn(replaySlots[0], createWinnerShareUrl(uuids[0], uuids[1], window.location.href));
+  } else if (winner === 1) {
+    makeShareBtn(replaySlots[0], createLoserShareUrl(uuids[0], uuids[1], window.location.href));
   }
 }
 
@@ -635,7 +639,7 @@ const onlineHandlers: OnlineHandlers = {
       makeActionBtn(replaySlots[0], "再接続", requeueOnline);
       createIcons({ icons: ICONS });
     } else if (phase === "result" && replaySlots[0].children.length > 0) {
-      // Result buttons (もう一度/この相手と切断する) were already rendered
+      // Result buttons (もう一度/切断する) were already rendered
       // before the connection died — rebuild them now via
       // buildOnlineResultButtons(), which checks online.isOpen first and
       // renders 再接続 instead, so a stale button never just does nothing.
@@ -662,7 +666,7 @@ function readyAgainOnline() {
 // to matchmaking for someone new. Distinct from requeueOnline(), which only
 // applies once the opponent is already gone.
 function leaveOpponent() {
-  online?.sendLeave();
+  online?.sendLeave(uuidVersion);
   onlineMatched = false;
   opponentLeft = false;
   resetGame();
@@ -674,9 +678,9 @@ function requeueOnline() {
   onlineMatched = false;
   resetGame();
   if (online?.isOpen) {
-    online.sendRequeue();
+    online.sendRequeue(uuidVersion);
   } else {
-    online?.connect();
+    online?.connect(uuidVersion);
   }
 }
 
@@ -692,7 +696,7 @@ function toggleMode() {
     updateModeUi();
     resetGame();
     online = new OnlineConnection(onlineHandlers);
-    online.connect();
+    online.connect(uuidVersion);
   } else {
     online?.close();
     online = null;
@@ -782,6 +786,10 @@ function init() {
   versionToggleEls = Array.from(document.querySelectorAll<HTMLElement>(".version-toggle"));
   const toggleVersion = () => {
     if (phase !== "idle") return;
+    // Locked once matched: matchmaking only pairs same-version waiters (see
+    // worker/index.ts's enqueue()), so switching after that would silently
+    // desync the round the opponent already agreed to play.
+    if (mode === "online" && onlineMatched) return;
     uuidVersion = uuidVersion === "v4" ? "v7" : "v4";
     for (const el of versionToggleEls) {
       el.textContent = uuidVersion;
@@ -789,6 +797,11 @@ function init() {
     }
     void versionToggleEls[0].offsetWidth; // restart the animation on repeat clicks
     for (const el of versionToggleEls) el.classList.add("switching");
+    if (mode === "online" && online?.isOpen) {
+      // Still just waiting (not matched) — move to the other version's
+      // queue so matchmaking considers the new preference immediately.
+      online.sendRequeue(uuidVersion);
+    }
   };
   for (const el of versionToggleEls) el.addEventListener("click", toggleVersion);
 

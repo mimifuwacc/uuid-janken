@@ -47,7 +47,9 @@ export class OnlineConnection {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  connect(): void {
+  // version is the queue to join immediately once connected — see
+  // ServerMessage's "requeue" doc and worker/index.ts's enqueue().
+  connect(version: UuidVersion): void {
     // A previous socket that's still CONNECTING or OPEN must not be
     // abandoned here — e.g. a double-tap on 再接続 would otherwise leak it
     // as an orphaned connection the server still matches players against,
@@ -78,6 +80,7 @@ export class OnlineConnection {
 
     ws.addEventListener("open", () => {
       if (ws !== this.ws) return;
+      this.send({ type: "requeue", version });
       this.pingTimer = window.setInterval(() => {
         ws.send("ping");
         armPongTimeout();
@@ -134,12 +137,12 @@ export class OnlineConnection {
     this.send({ type: "ready", version });
   }
 
-  sendRequeue(): void {
-    this.send({ type: "requeue" });
+  sendRequeue(version: UuidVersion): void {
+    this.send({ type: "requeue", version });
   }
 
-  sendLeave(): void {
-    this.send({ type: "leave" });
+  sendLeave(version: UuidVersion): void {
+    this.send({ type: "leave", version });
   }
 
   close(): void {
