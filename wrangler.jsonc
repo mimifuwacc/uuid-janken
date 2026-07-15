@@ -15,12 +15,20 @@
         "name": "LOBBY",
         "class_name": "JankenLobby",
       },
+      {
+        "name": "ROOM",
+        "class_name": "JankenRoom",
+      },
     ],
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["JankenLobby"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["JankenRoom"],
     },
   ],
 }

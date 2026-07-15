@@ -1,6 +1,7 @@
 // Cloudflare Worker for online play. Serves the static build for every path
-// except /ws, which upgrades to a WebSocket handled by a single global
-// JankenLobby Durable Object that pairs random opponents and referees rounds.
+// except the WebSocket endpoints: /ws (random 1v1 matchmaking, single global
+// JankenLobby) and /ws/room/:id (a named JankenRoom Durable Object per room,
+// for the N-player "みんなで対戦" mode).
 
 import { v7 as uuidV7 } from "uuid";
 import {
@@ -10,11 +11,20 @@ import {
   type ServerMessage,
   type UuidVersion,
 } from "../src/protocol";
+import {
+  ROOM_COLORS,
+  type RoomClientMessage,
+  type RoomRosterPlayer,
+  type RoomServerMessage,
+} from "../src/room-protocol";
 
 export interface Env {
   ASSETS: Fetcher;
   LOBBY: DurableObjectNamespace;
+  ROOM: DurableObjectNamespace;
 }
+
+const ROOM_WS_PATH = /^\/ws\/room\/([^/]+)$/;
 
 export default {
   fetch(request, env): Response | Promise<Response> {
@@ -23,6 +33,12 @@ export default {
       // One lobby for everyone — a single Durable Object instance is plenty
       // for this game's scale and makes matchmaking trivial.
       return env.LOBBY.get(env.LOBBY.idFromName("lobby")).fetch(request);
+    }
+    const roomMatch = ROOM_WS_PATH.exec(url.pathname);
+    if (roomMatch) {
+      // One Durable Object per room id (from the shareable /room/:id URL).
+      const roomId = decodeURIComponent(roomMatch[1]);
+      return env.ROOM.get(env.ROOM.idFromName(roomId)).fetch(request);
     }
     return env.ASSETS.fetch(request);
   },
@@ -281,6 +297,142 @@ export class JankenLobby {
   }
 
   send(ws: WebSocket, msg: ServerMessage): void {
+    try {
+      ws.send(JSON.stringify(msg));
+    } catch {
+      // Socket already gone; its close handler tidies up.
+    }
+  }
+}
+
+// Per-socket state for a room member, persisted via (de)serializeAttachment so
+// it survives hibernation. `num` is a stable join number (max existing + 1, so
+// it's never reused while the room lives) surfaced as "プレイヤー{num}"; `ready`
+// arms the member for the next round.
+interface RoomAttachment {
+  playerId: string;
+  num: number;
+  color: string;
+  ready: boolean;
+}
+
+const getRoomAttachment = (ws: WebSocket): RoomAttachment | null =>
+  ws.deserializeAttachment() as RoomAttachment | null;
+const setRoomAttachment = (ws: WebSocket, att: RoomAttachment): void => {
+  ws.serializeAttachment(att);
+};
+
+// One Durable Object per room id. Members join by opening /ws/room/:id; the room
+// starts a round the instant every connected member is ready and at least two
+// are present, deals one v4 UUID per member, and the clients rank them locally
+// (largest wins — see rankByUuid). Between rounds "ready" arms again.
+export class JankenRoom {
+  ctx: DurableObjectState;
+
+  constructor(ctx: DurableObjectState) {
+    this.ctx = ctx;
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  fetch(request: Request): Response {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("Expected WebSocket upgrade", { status: 426 });
+    }
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+
+    // Assign a stable join number and a distinct colour based on who's already
+    // here (computed before accepting so the new socket isn't counted yet).
+    const existing = this.members();
+    const num = existing.reduce((max, ws) => Math.max(max, getRoomAttachment(ws)!.num), 0) + 1;
+    const usedColors = new Set(existing.map((ws) => getRoomAttachment(ws)!.color));
+    const color =
+      ROOM_COLORS.find((c) => !usedColors.has(c)) ?? ROOM_COLORS[(num - 1) % ROOM_COLORS.length];
+
+    this.ctx.acceptWebSocket(server);
+    setRoomAttachment(server, { playerId: crypto.randomUUID(), num, color, ready: false });
+    this.broadcastRoster();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): void {
+    if (typeof message !== "string") return;
+    let msg: RoomClientMessage;
+    try {
+      msg = JSON.parse(message) as RoomClientMessage;
+    } catch {
+      return;
+    }
+    const att = getRoomAttachment(ws);
+    if (!att) return;
+
+    if (msg.type === "ready" && !att.ready) {
+      setRoomAttachment(ws, { ...att, ready: true });
+      // If this readies the whole room, start immediately without a stale
+      // roster flash; otherwise let everyone see the updated ready state.
+      if (!this.maybeStartRound()) this.broadcastRoster();
+      return;
+    }
+
+    if (msg.type === "cancel" && att.ready) {
+      setRoomAttachment(ws, { ...att, ready: false });
+      this.broadcastRoster();
+    }
+  }
+
+  webSocketClose(ws: WebSocket): void {
+    this.handleGone(ws);
+  }
+
+  webSocketError(ws: WebSocket): void {
+    this.handleGone(ws);
+  }
+
+  // A member left: re-broadcast the roster, and — since their departure may
+  // have left everyone else already ready — check whether the round can start.
+  handleGone(ws: WebSocket): void {
+    if (!getRoomAttachment(ws)) return;
+    if (!this.maybeStartRound(ws)) this.broadcastRoster();
+  }
+
+  // Starts a round iff at least two members are present and all are ready.
+  // Returns whether a round was started. `leaving` is a socket that's on its
+  // way out (a close in flight) and must be excluded from the round.
+  maybeStartRound(leaving?: WebSocket): boolean {
+    const members = this.members().filter((ws) => ws !== leaving);
+    if (members.length < 2) return false;
+    if (!members.every((ws) => getRoomAttachment(ws)!.ready)) return false;
+
+    const players = members.map((ws) => ({ ws, id: getRoomAttachment(ws)!.playerId }));
+    const dealt = players.map((p) => ({ id: p.id, uuid: crypto.randomUUID() }));
+    const start: RoomServerMessage = { type: "start", players: dealt };
+    for (const p of players) {
+      this.send(p.ws, start);
+      // Disarm for the next round; clients re-arm via "ready" after the result.
+      const att = getRoomAttachment(p.ws)!;
+      setRoomAttachment(p.ws, { ...att, ready: false });
+    }
+    return true;
+  }
+
+  broadcastRoster(): void {
+    const members = this.members();
+    const players: RoomRosterPlayer[] = members.map((ws) => {
+      const a = getRoomAttachment(ws)!;
+      return { id: a.playerId, num: a.num, color: a.color, ready: a.ready };
+    });
+    for (const ws of members) {
+      const a = getRoomAttachment(ws)!;
+      this.send(ws, { type: "roster", youId: a.playerId, players });
+    }
+  }
+
+  members(): WebSocket[] {
+    return this.ctx.getWebSockets().filter((ws) => getRoomAttachment(ws) !== null);
+  }
+
+  send(ws: WebSocket, msg: RoomServerMessage): void {
     try {
       ws.send(JSON.stringify(msg));
     } catch {
