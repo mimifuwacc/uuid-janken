@@ -1,6 +1,6 @@
 import "./style.css";
 import { startRouter, route } from "./router";
-import { createGame1v1View } from "./views/game1v1";
+import { createGame1v1View } from "./views/game-1v1";
 import { createRoomView } from "./views/room";
 
 // Hand-rolled routing (see router.ts). "/" is the classic 1v1 screen (local by
