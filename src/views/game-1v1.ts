@@ -1,17 +1,15 @@
 import { icon } from "@fortawesome/fontawesome-svg-core";
 import { faTwitter } from "@fortawesome/free-brands-svg-icons/faTwitter";
 import { createIcons, Swords, RefreshCcw, Globe, Users, Volume2, QrCode } from "lucide";
-import {
-  getRevealDelay,
-  getRevealFrequency,
-  getRevealShakeDistance,
-  REVEAL_CHARACTER_COUNT,
-} from "../reveal";
+import { getRevealDelay, getRevealShakeDistance, REVEAL_CHARACTER_COUNT } from "../reveal";
 import { OnlineConnection, type OnlineHandlers } from "../online";
 import { fallbackUuidV7Pair } from "../race";
 import { createDrawShareUrl, createLoserShareUrl, createWinnerShareUrl } from "../share";
 import { compareUuids, generateRaceUuids, generateUuidV4, type UuidVersion } from "../uuid";
 import { navigate, type View } from "../router";
+import { prepareAudio, playCallSound, playRevealSound, playFanfareSound } from "../game/audio";
+import { buildUuidRevealHtml } from "../game/uuid-reveal";
+import { burstParticles, disposeParticles, initParticles, stopParticles } from "../game/particles";
 
 const ICONS = { Swords, RefreshCcw, Globe, Users, Volume2, QrCode };
 
@@ -24,28 +22,12 @@ const TWITTER_ICON = icon(faTwitter).html.join("");
 
 type Phase = "idle" | "countdown" | "reveal" | "result";
 
-interface Particle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  color: string;
-  size: number;
-  life: number;
-  shape: "rect" | "circle";
-  rotation: number;
-  rotSpeed: number;
-}
-
 let phase: Phase = "idle";
 let ready: [boolean, boolean] = [false, false];
 let uuids: [string, string] = ["", ""];
 let revealCount = 0;
 let winner: 0 | 1 | "draw" | null = null;
-let particles: Particle[] = [];
-let rafId = 0;
 let revealTimer = 0;
-let audioContext: AudioContext | null = null;
 let revealShake: Animation | null = null;
 let uuidVersion: UuidVersion = "v4";
 // Online play: bottom half is always "you", top half is the opponent driven
@@ -65,7 +47,6 @@ const callSequence = (version: UuidVersion): { text: string; cls: string; durati
   { text: version === "v4" ? "4" : "7", cls: "call-four", duration: 950 },
   { text: "じゃんけん", cls: "call-janken", duration: 900 },
 ];
-const PARTICLE_COLORS = ["#00ff88", "#ff5f35", "#ffffff", "#ffdd00", "#00cfff", "#ff66cc"];
 // Must match the desktop split in style.css (halves side-by-side, not rotated).
 const DESKTOP_SPLIT_QUERY = "(min-width: 900px) and (orientation: landscape)";
 
@@ -79,36 +60,10 @@ let roomEntryEl: HTMLElement;
 let countdownEl: HTMLElement;
 let countdownHalves: [HTMLElement, HTMLElement];
 let versionToggleEls: HTMLElement[];
-let canvas: HTMLCanvasElement;
-let ctx: CanvasRenderingContext2D;
-
-function buildUUIDHtml(playerIdx: 0 | 1): string {
-  const uuid = uuids[playerIdx];
-  if (!uuid) return "";
-
-  const revealFrom = 36 - revealCount;
-
-  const spans = uuid.split("").map((ch, i) => {
-    const isDash = ch === "-";
-    if (i >= revealFrom) {
-      const isNew = i === revealFrom;
-      const cls = ["uuid-char", isDash ? "dash" : "", "revealed", isNew ? "new" : ""]
-        .filter(Boolean)
-        .join(" ");
-      return `<span class="${cls}">${ch}</span>`;
-    }
-    return `<span class="uuid-char${isDash ? " dash" : ""}">${isDash ? "-" : "·"}</span>`;
-  });
-
-  // Split into two rows at the third dash (index 18) for larger font
-  const row1 = spans.slice(0, 18).join("");
-  const row2 = spans.slice(18).join("");
-  return `<div class="uuid-row">${row1}</div><div class="uuid-row">${row2}</div>`;
-}
 
 function refreshUUIDs() {
   for (let p = 0 as 0 | 1; p < 2; p = (p + 1) as 0 | 1) {
-    uuidEls[p].innerHTML = buildUUIDHtml(p);
+    uuidEls[p].innerHTML = buildUuidRevealHtml(uuids[p], revealCount);
   }
 }
 
@@ -122,145 +77,6 @@ function setIdleControlsVisible(visible: boolean) {
   }
   modeToggleEl.style.display = visible ? "" : "none";
   roomEntryEl.style.display = visible ? "" : "none";
-}
-
-function prepareAudio() {
-  audioContext ??= new AudioContext();
-  void audioContext.resume();
-}
-
-function playRevealSound() {
-  if (!audioContext) return;
-
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  const now = audioContext.currentTime;
-  oscillator.type = "square";
-  oscillator.frequency.value = getRevealFrequency(revealCount);
-  gain.gain.setValueAtTime(0.035, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  oscillator.connect(gain);
-  gain.connect(audioContext.destination);
-  oscillator.start(now);
-  oscillator.stop(now + 0.05);
-}
-
-// Rich chord stab for each battle-cry step ("最初は" / "4" / "じゃんけん").
-function playCallSound() {
-  if (!audioContext) return;
-  const ctx = audioContext;
-  const now = ctx.currentTime;
-
-  const master = ctx.createGain();
-  master.gain.value = 0.5;
-  master.connect(ctx.destination);
-
-  const root = 392.0; // G4 — same pitch on every step
-
-  // Root + fifth + octave for a full stab that rings out.
-  const voices = [root, root * 1.5, root * 2];
-  voices.forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = i === 0 ? "sawtooth" : "triangle";
-    osc.frequency.value = freq;
-    osc.detune.value = i === 0 ? -6 : 6;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
-    gain.gain.setValueAtTime(0.16, now + 0.1);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start(now);
-    osc.stop(now + 0.8);
-  });
-
-  // Bright bell sparkle two octaves up, with a long tail.
-  const bell = ctx.createOscillator();
-  const bellGain = ctx.createGain();
-  bell.type = "triangle";
-  bell.frequency.value = root * 4;
-  bellGain.gain.setValueAtTime(0.0001, now);
-  bellGain.gain.exponentialRampToValueAtTime(0.07, now + 0.01);
-  bellGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
-  bell.connect(bellGain);
-  bellGain.connect(master);
-  bell.start(now);
-  bell.stop(now + 0.65);
-}
-
-// "じゃじゃーん！" — a lush fanfare: pickup arpeggio into a big detuned major
-// chord, with sub-bass weight, bell sparkles and a cymbal-like shimmer swell.
-function playFanfareSound() {
-  if (!audioContext) return;
-  const ctx = audioContext;
-  const now = ctx.currentTime;
-
-  const master = ctx.createGain();
-  master.gain.value = 0.55;
-  master.connect(ctx.destination);
-
-  // Glue bus for the tonal layers.
-  const bus = ctx.createBiquadFilter();
-  bus.type = "lowpass";
-  bus.frequency.value = 6500;
-  bus.connect(master);
-
-  const playNote = (
-    freq: number,
-    start: number,
-    dur: number,
-    type: OscillatorType,
-    peak: number,
-    detune = 0,
-  ) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    osc.detune.value = detune;
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(peak, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-    osc.connect(gain);
-    gain.connect(bus);
-    osc.start(start);
-    osc.stop(start + dur + 0.05);
-  };
-
-  // Pickup arpeggio: "じゃ・じゃ・じゃ…"
-  const pickup = [392.0, 523.25, 659.25];
-  pickup.forEach((f, i) => playNote(f, now + i * 0.07, 0.22, "triangle", 0.16));
-
-  // The big chord hit: "ジャーン！" — C major spread across two octaves.
-  const hit = now + 0.21;
-  const chord = [261.63, 523.25, 659.25, 783.99, 1046.5, 1318.51];
-  chord.forEach((f, i) => playNote(f, hit + i * 0.012, 1.4, "sawtooth", 0.13, i % 2 ? 7 : -7));
-
-  // Sub-bass thump for weight, and bright bell sparkles on top.
-  playNote(130.81, hit, 1.1, "sine", 0.4);
-  playNote(2093.0, hit + 0.02, 1.5, "triangle", 0.07);
-  playNote(2637.02, hit + 0.07, 1.3, "triangle", 0.05);
-
-  // Cymbal-like shimmer: high-passed noise swell.
-  const noiseDur = 1.3;
-  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * noiseDur), ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  const noise = ctx.createBufferSource();
-  noise.buffer = buffer;
-  const hp = ctx.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = 6000;
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.0001, hit);
-  noiseGain.gain.exponentialRampToValueAtTime(0.05, hit + 0.05);
-  noiseGain.gain.exponentialRampToValueAtTime(0.0001, hit + noiseDur);
-  noise.connect(hp);
-  hp.connect(noiseGain);
-  noiseGain.connect(master);
-  noise.start(hit);
-  noise.stop(hit + noiseDur);
 }
 
 function playRevealShake(app: HTMLElement, shakeDistance: number) {
@@ -389,7 +205,7 @@ function startReveal() {
     revealCount++;
     const shakeDistance = getRevealShakeDistance(revealCount);
     refreshUUIDs();
-    playRevealSound();
+    playRevealSound(revealCount);
     playRevealShake(app, shakeDistance);
     if (revealCount < REVEAL_CHARACTER_COUNT) {
       revealTimer = window.setTimeout(tick, getRevealDelay(revealCount));
@@ -399,76 +215,6 @@ function startReveal() {
   };
 
   revealTimer = window.setTimeout(tick, getRevealDelay(revealCount));
-}
-
-function spawnParticles(winnerIdx: 0 | 1) {
-  const rect = halfEls[winnerIdx].getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-
-  for (let i = 0; i < 120; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 2 + Math.random() * 10;
-    particles.push({
-      x: cx + (Math.random() - 0.5) * rect.width * 0.6,
-      y: cy + (Math.random() - 0.5) * rect.height * 0.4,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - 2,
-      color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
-      size: 4 + Math.random() * 7,
-      life: 0.8 + Math.random() * 0.2,
-      shape: Math.random() > 0.45 ? "rect" : "circle",
-      rotation: Math.random() * Math.PI * 2,
-      rotSpeed: (Math.random() - 0.5) * 0.25,
-    });
-  }
-
-  const draw = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.18;
-      p.vx *= 0.985;
-      p.life -= 0.012;
-      p.rotation += p.rotSpeed;
-
-      if (p.life <= 0) {
-        particles.splice(i, 1);
-        continue;
-      }
-
-      ctx.save();
-      ctx.globalAlpha = Math.min(p.life * 1.8, 1);
-      ctx.fillStyle = p.color;
-      ctx.shadowBlur = 6;
-      ctx.shadowColor = p.color;
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rotation);
-
-      if (p.shape === "rect") {
-        ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.55);
-      } else {
-        ctx.beginPath();
-        ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-
-    if (particles.length > 0) {
-      rafId = requestAnimationFrame(draw);
-    } else {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-  };
-
-  rafId = requestAnimationFrame(draw);
 }
 
 function showResult() {
@@ -496,7 +242,7 @@ function showResult() {
     }, 500);
     setStatus(winner, "WIN！");
     setStatus(loser, "LOSE...");
-    spawnParticles(winner);
+    burstParticles(halfEls[winner].getBoundingClientRect());
   }
 
   setTimeout(() => {
@@ -580,10 +326,8 @@ function buildOnlineResultButtons() {
 
 function resetGame() {
   clearTimeout(revealTimer);
-  cancelAnimationFrame(rafId);
+  stopParticles();
   revealShake?.cancel();
-  particles = [];
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   phase = "idle";
   ready = [false, false];
@@ -741,11 +485,6 @@ function updateModeUi() {
   createIcons({ icons: ICONS });
 }
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-
 function buildDom() {
   const app = appEl;
 
@@ -837,10 +576,7 @@ function buildDom() {
   };
   for (const el of versionToggleEls) el.addEventListener("click", toggleVersion);
 
-  canvas = document.getElementById("particles") as HTMLCanvasElement;
-  ctx = canvas.getContext("2d")!;
-  resizeCanvas();
-  window.addEventListener("resize", resizeCanvas);
+  initParticles();
 
   // Let taps on interactive children (replay button / share link) behave
   // natively — otherwise the half's preventDefault swallows the link's tap.
@@ -881,8 +617,6 @@ export function createGame1v1View(): View {
       uuids = ["", ""];
       revealCount = 0;
       winner = null;
-      particles = [];
-      rafId = 0;
       revealTimer = 0;
       revealShake = null;
       uuidVersion = "v4";
@@ -897,14 +631,12 @@ export function createGame1v1View(): View {
     unmount() {
       disposed = true;
       clearTimeout(revealTimer);
-      cancelAnimationFrame(rafId);
       revealShake?.cancel();
       // Closing the socket is how the (still-connected) opponent is told we
       // left — the server relays it as opponent_left.
       online?.close();
       online = null;
-      window.removeEventListener("resize", resizeCanvas);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      disposeParticles();
     },
   };
 }
